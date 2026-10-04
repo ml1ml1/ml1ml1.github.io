@@ -134,6 +134,7 @@
 			rocket_chicken: "assets/characters/rocket_chicken.webp",
 			cactus_cow: "assets/characters/cactus_cow.webp",
 			ninja_tomato: "assets/characters/ninja_tomato.webp",
+			lava_hamster: "assets/characters/lava_hamster.webp",
 			moon_donkey: "assets/characters/moon_donkey.webp",
 			toilet_dragon: "assets/characters/toilet_dragon.webp",
 			diamond_frog: "assets/characters/diamond_frog.webp",
@@ -237,7 +238,9 @@
 				gp: 0,
 				ab: 0,
 				hell: 0,
-				days: 0
+				days: 0,
+				fb: 0,
+				jb: 0
 			},
 			set: {
 				sound: true,
@@ -250,12 +253,19 @@
 			ach: {},
 			up: {},
 			abl: {},
-			stolen: {}
+			stolen: {},
+			slots: [],
+			boostT: 0
 		});
 	let SV = DEF();
 	const SaveManager = {
 		save() {
 			try {
+				SV.slots = slots.map(s => ({
+					p: s.p,
+					id: s.c.id
+				}));
+				SV.ts = Date.now();
 				localStorage.setItem(KEY, JSON.stringify(SV))
 			} catch(e) {}
 		}, load() {
@@ -271,6 +281,7 @@
 				SV.ach = d.ach || {};
 				SV.up = d.up || {};
 				SV.abl = d.abl || {};
+				SV.slots = Array.isArray(d.slots) ? d.slots : [];
 				SV.stolen = d.stolen || Object.fromEntries(CH.filter(c => c.mergeLevel >= 7 && SV.owned[c.id]).map(c => [c.id, 1]))
 			} catch(e) {
 				SV = DEF()
@@ -281,8 +292,9 @@
 		}
 	};
 	SaveManager.load();
-	setInterval(() => SaveManager.save(), 5000);
+	setInterval(() => SaveManager.save(), 2000);
 	addEventListener('beforeunload', () => SaveManager.save());
+	addEventListener('pagehide', () => SaveManager.save());
 	/* ===== ACHIEVEMENTS ===== */
 	const cnt = r => CH.filter(c => c.rarity === r && SV.owned[c.id]).length,
 		st = k => () => SV.stats[k],
@@ -473,7 +485,7 @@
 		}
 	};
 
-	function spawn() {
+	function spawn(top) {
 		const mx = maxS();
 		if(slots.length >= mx) return;
 		const used = slots.map(s => s.p);
@@ -491,7 +503,8 @@
 			if(!ps.length) ps.push(Math.min(mn, am));
 			let r = Math.random() * ps.reduce((a, _, i) => a + 4 - i, 0);
 			lvl = ps.find((_, i) => (r -= 4 - i) < 0);
-			if(lvl === undefined) lvl = ps[0]
+			if(lvl === undefined) lvl = ps[0];
+			if(top) lvl = ps[ps.length - 1]
 		}
 		slots.push({
 			p, c: CH[lvl], sq: 0, bob: rnd(0, 6)
@@ -569,7 +582,8 @@
 		});
 		float('СЛИЯНИЕ!', pos[0], pos[1] - 110, '#ffe14d', 38);
 		SoundManager.play('merge');
-		checkAch()
+		checkAch();
+		SaveManager.save()
 	}
 	/* ===== RAID RUNNER ===== */
 	const R = {};
@@ -611,7 +625,8 @@
 			px: 360,
 			lt: rnd(7, 10),
 			lw: 0,
-			half: 0
+			half: 0,
+			pt: rnd(5, 8)
 		});
 		scene = 'raid';
 		SoundManager.play('click');
@@ -651,7 +666,6 @@
 			};
 		add('single', 4);
 		add('coins', M.cn);
-		add('pu', M.pu);
 		if(d >= 1) {
 			add('gap', 2);
 			add('rocket', M.rk)
@@ -662,7 +676,17 @@
 			add('move', M.mv)
 		}
 		if(M.lava) add('lava', M.lava);
-		const k = pk[ri(0, pk.length - 1)];
+		let k = pk[ri(0, pk.length - 1)];
+		const sp0 = (520 + R.t * M.acc) * D.sp * (R.half ? 1.12 : 1),
+			at = (y, vm) => (1010 - y) / (sp0 * (vm || 1)),
+			hz = R.obs.filter(h => !isPK(h.type) && !h.dead);
+		if(k === 'rocket') {
+			const ra = at(-420, 2.2);
+			if(hz.some(h => Math.abs(at(h.y, h.vm) - ra) < .9)) k = 'coins'
+		} else if(k !== 'coins' && k !== 'pu') {
+			const na = at(-60);
+			if(hz.some(h => h.type === 5 && Math.abs(at(h.y, h.vm) - na) < .9)) k = 'coins'
+		}
 		if(k === 'single') o(L, -60, Math.random() < M.wall ? 1 : 0);
 		else if(k === 'coins') {
 			for(let i = 0; i < 5; i++) o(L, -60 - i * 90, 3);
@@ -681,14 +705,36 @@
 			R.spawn += .9
 		} else if(k === 'move') o(1, -60, 4);
 		else if(k === 'lava') {
-			o(L, -200, 8, {
-				h: 260
+			o(L, -160, 8, {
+				h: 160
 			});
-			if(d >= 2) o((L + 1) % 3, -200, 8, {
-				h: 260
+			if(d >= 2) o((L + 1) % 3, -160, 8, {
+				h: 160
 			});
 			R.spawn += .5
 		}
+	}
+
+	function spawnPU() {
+		const D = R.D,
+			M = R.M;
+		R.pt = rnd(8, 12) / (.7 + .15 * M.pu) * (1 + .08 * (3 - R.d));
+		const w = [R.shield > 0 ? 1 : 3, R.gap < .5 ? 4 : 2, R.mag > 0 ? 1 : 2],
+			r0 = Math.random() * (w[0] + w[1] + w[2]),
+			k = r0 < w[0] ? 0 : r0 < w[0] + w[1] ? 1 : 2,
+			sp0 = (520 + R.t * M.acc) * D.sp * (R.half ? 1.12 : 1),
+			ta = 1070 / sp0,
+			hz = R.obs.filter(h => !isPK(h.type) && !h.dead),
+			ls = [0, 1, 2].filter(l => !hz.some(h => (h.type === 6 || h.l === l) && Math.abs((1010 - h.y) / (sp0 * (h.vm || 1)) - ta) < .6)),
+			L = ls.length ? ls[ri(0, ls.length - 1)] : ri(0, 2);
+		R.obs.push({
+			l: L,
+			y: -60,
+			type: 7,
+			k,
+			ph: rnd(0, 6),
+			x: LX[L]
+		})
 	}
 
 	function raidUpdate(dt) {
@@ -700,6 +746,9 @@
 		R.leap -= dt;
 		R.mag -= dt;
 		R.cd -= dt;
+		R.pt -= dt;
+		if(R.pt <= 0 && R.t < R.dur - 4 && !R.bonus) spawnPU();
+		if(R.fl) R.fl.t -= dt;
 		if(!R.half && R.t > R.dur * .5) {
 			R.half = 1;
 			float('🔥 ПОЛОВИНА ПУТИ!', 360, 820, '#ffb800', 44)
@@ -723,8 +772,26 @@
 		if(R.spawn <= 0 && R.t < R.dur - 2 && !R.bonus) spawnPattern();
 		const sp = (520 + R.t * R.M.acc) * R.D.sp * (R.half ? 1.12 : 1) * (R.slowT > 0 ? R.slowF : 1);
 		R.obs.forEach(o => {
+			if(isPK(o.type) && !o.dead) {
+				const rad = R.mag > 0 ? 700 : [0, 260, 420][lv('magnet')],
+					dx = R.px - o.x,
+					dy = 1000 - o.y,
+					ds = Math.hypot(dx, dy);
+				if(rad && (o.pl || ds < rad) && o.y > -50) {
+					o.pl = 1;
+					const m = Math.max(1000, sp * 1.6) * dt;
+					if(ds <= m) {
+						o.x = R.px;
+						o.y = 1000
+					} else {
+						o.x += dx / ds * m;
+						o.y += dy / ds * m
+					}
+					return
+				}
+			}
 			o.y += sp * dt * (o.vm || 1);
-			o.x = o.type === 4 ? 360 + Math.sin(R.t * 2.2 + o.ph) * 200 : LX[o.l]
+			o.x = o.type === 4 ? 360 + Math.sin(R.t * 2.2 + o.ph) * 200 : (o.pl ? o.x : LX[o.l])
 		});
 		R.px += (LX[R.lane] - R.px) * Math.min(1, (R.M.ice ? 5 : 14) * dt);
 		R.obs = R.obs.filter(o => o.y < 1350 && !o.dead);
@@ -732,7 +799,7 @@
 		R.jy = Math.max(0, R.jy + R.vy * dt);
 		if(R.jy === 0 && R.vy < 0) R.vy = 0;
 		for(const o of R.obs)
-			if(isPK(o.type) && !o.dead && Math.abs(o.y - 1010) < 70 && Math.abs(o.x - R.px) < 70 + (R.mag > 0 ? 400 : lv('magnet') * 200)) {
+			if(isPK(o.type) && !o.dead && Math.abs(o.y - 1010) < 70 && Math.abs(o.x - R.px) < 70) {
 				o.dead = 1;
 				if(o.type === 2) {
 					const g = 1 + (Math.random() < .25 * lv('vein') ? 1 : 0);
@@ -747,8 +814,8 @@
 						R.shield = Math.min(R.shield + 1, 5);
 						float('🛡 ЩИТ', o.x, 900, '#7fe9ff')
 					} else if(k === 1) {
-						R.slowT = 4;
-						R.slowF = .6;
+						R.slowF = R.slowT > 0 ? Math.min(R.slowF, .6) : .6;
+						R.slowT = Math.max(R.slowT, 4);
 						float('⏳ ЗАМЕДЛЕНИЕ', o.x, 900, '#ffb800')
 					} else {
 						R.mag = 6;
@@ -760,10 +827,25 @@
 					R.coins += v;
 					if(!R.bonus || Math.random() < .25) float('+' + v, LX[o.l], 900, '#ffe14d')
 				}
+				const pc = o.type === 2 ? '#7fe9ff' : o.type === 3 ? '#ffe14d' : ['#7fe9ff', '#ffb800', '#d98cff'][o.k];
+				if(o.type !== 3 || !R.bonus) {
+					R.fl = {
+						c: pc,
+						t: .35
+					};
+					if(UI.rings.length < 10) UI.rings.push({
+						x: R.px,
+						y: 1000,
+						r: 30,
+						l: .4,
+						col: pc
+					});
+					burst(R.px, 1000, pc, o.type === 3 ? 4 : 12)
+				}
 				SoundManager.play('collect')
 			}
 		for(const o of R.obs)
-			if(!isPK(o.type) && !o.dead && (o.type === 6 || Math.abs(o.x - R.px) < 72) && Math.abs(o.y - 1010) < Math.max(55, (o.h || 0) / 2 + 25) && (HI.includes(o.type) || (R.jy < 60 && R.leap <= 0)) && R.inv <= 0) {
+			if(!isPK(o.type) && !o.dead && (o.type === 6 || (Math.abs(o.x - LX[R.lane]) < 80 && Math.abs(o.x - R.px) < 80)) && Math.abs(o.y - 1010) < Math.max(55, (o.h || 0) / 2 + 25) && (HI.includes(o.type) || (R.jy < 60 && R.leap <= 0)) && R.inv <= 0) {
 				o.dead = 1;
 				if(R.shield > 0) {
 					R.shield--;
@@ -844,11 +926,27 @@
 			rr(LX[i] - 90, 0, 180, H, 0);
 			ctx.fill()
 		}
+		if(R.slowT > 0) {
+			ctx.fillStyle = '#4aa8ff26';
+			ctx.fillRect(0, 0, W, H)
+		}
 		const bt = 1280 - (1 - R.gap) * 0 + 0;
 		T('ЦЕЛЬ: ' + nmL(R.target).toUpperCase(), 360, 60, 34, RAR[R.target.rarity].col);
 		bar(60, 100, 600, 30, R.t / R.dur, '#3d9bff');
-		T('БОСС', 60, 160, 24, '#ff7a7a', 'left');
-		if(R.shield > 0) T('🛡 x' + R.shield, 620, 200, 30, '#7fe9ff');
+		T('БОСС', 60, 160, 24, '#ff7a7a', 'left'); {
+			let cy = 200;
+			[
+				[R.shield > 0, '🛡 ×' + R.shield, '#7fe9ff'],
+				[R.slowT > 0, '⏳ ' + R.slowT.toFixed(1) + 'с', '#ffb800'],
+				[R.mag > 0, '🧲 ' + R.mag.toFixed(1) + 'с', '#d98cff'],
+				[R.inv > 1, '✨ ' + R.inv.toFixed(1) + 'с', '#fff']
+			].forEach(c => {
+				if(c[0]) {
+					T(c[1], 700, cy, 28, c[2], 'right');
+					cy += 36
+				}
+			})
+		}
 		if(R.gems) T('💎 +' + R.gems, 20, 200, 30, '#7fe9ff', 'left');
 		if(R.coins) T('🪙 +' + R.coins, 20, 236, 26, '#ffe14d', 'left');
 		if(R.lw > 0) T('⚠ ПРЫГАЙ!', 360, 470, 64, Math.floor(R.t * 10) % 2 ? '#ff3d3d' : '#fff');
@@ -868,7 +966,13 @@
 			const t = o.type,
 				x = o.x || LX[o.l];
 			if(isPK(t)) {
-				T(t === 2 ? '💎' : t === 3 ? '🪙' : ['🛡', '⏳', '🧲'][o.k], x, o.y, 64);
+				const gc = t === 2 ? '#7fe9ff' : t === 3 ? '#ffe14d' : ['#7fe9ff', '#ffb800', '#d98cff'][o.k];
+				ctx.fillStyle = gc + '44';
+				ctx.beginPath();
+				ctx.arc(x, o.y, (t === 3 ? 34 : 48) + Math.sin(R.t * 8 + o.ph) * 5, 0, 7);
+				ctx.fill();
+				T(t === 2 ? '💎' : t === 3 ? '🪙' : ['🛡', '⏳', '🧲'][o.k], x, o.y, t === 3 ? 52 : 64);
+				if(t === 7) T(['ЩИТ', 'ЗАМЕДЛ.', 'МАГНИТ'][o.k], x, o.y + 54, 18, gc);
 				return
 			}
 			if(t === 5) {
@@ -885,7 +989,7 @@
 			}
 			if(t === 8) {
 				ctx.fillStyle = '#ff5a14';
-				rr(x - 80, o.y - 130, 160, 260, 16);
+				rr(x - 80, o.y - 80, 160, 160, 16);
 				ctx.fill();
 				T('ЛАВА · ПРЫГАЙ', x, o.y, 19);
 				return
@@ -908,7 +1012,44 @@
 			ctx.beginPath();
 			ctx.ellipse(px, 1040, 45, 14, 0, 0, 7);
 			ctx.fill();
+			if(R.shield > 0) {
+				ctx.fillStyle = '#7fe9ff33';
+				ctx.strokeStyle = '#7fe9ffcc';
+				ctx.lineWidth = 6;
+				ctx.beginPath();
+				ctx.arc(px, py - 10, 80 + Math.sin(R.t * 8) * 4, 0, 7);
+				ctx.fill();
+				ctx.stroke()
+			}
+			if(R.mag > 0) {
+				for(let i = 0; i < 3; i++) {
+					const q2 = (R.t * 180 + i * 80) % 240 + 40;
+					ctx.globalAlpha = 1 - q2 / 290;
+					ctx.strokeStyle = '#d98cff';
+					ctx.lineWidth = 5;
+					ctx.beginPath();
+					ctx.arc(px, py - 10, q2, 0, 7);
+					ctx.stroke()
+				}
+				ctx.globalAlpha = 1
+			}
+			if(R.slowT > 0) {
+				ctx.strokeStyle = '#ffb800';
+				ctx.lineWidth = 4;
+				ctx.setLineDash && ctx.setLineDash([8, 8]);
+				ctx.beginPath();
+				ctx.arc(px, py - 10, 95, 0, 7);
+				ctx.stroke();
+				ctx.setLineDash && ctx.setLineDash([])
+			}
 			drawChar(R.run, px, py - 10, 110)
+		}
+		if(R.fl && R.fl.t > 0) {
+			ctx.globalAlpha = Math.max(0, R.fl.t * 1.6);
+			ctx.strokeStyle = R.fl.c;
+			ctx.lineWidth = 20;
+			ctx.strokeRect(0, 0, W, H);
+			ctx.globalAlpha = 1
 		}
 		if(!R.over) {
 			const a = AB[R.run.mergeLevel];
@@ -1026,20 +1167,21 @@
 		G.acc = (G.acc || 0) + dt;
 		if(G.acc >= 1) {
 			G.acc -= 1;
-			SV.coins += Math.round(fabR())
+			SV.coins += Math.round(fabR() * (SV.boostT > 0 ? 2 : 1))
 		}
 		if(lv('fab')) T('🏭 +' + Math.round(fabR()) + '/с', 600, 100, 24, '#ffe14d');
 		if(spawnT <= 0) {
 			spawnT = SPN[lv('spawn')];
 			spawn()
 		}
-		hint = !SV.stats.taps ? 'ЖМИ НА БРЕЙНРОТА!' : !SV.stats.merges ? 'ПЕРЕТАЩИ ОДИНАКОВЫХ ДРУГ НА ДРУГА!' : hasRaid && !SV.stats.raids ? 'ТВОЙ ПЕРВЫЙ НАБЕГ ГОТОВ!' : '';
+		hint = !SV.stats.taps ? 'ЖМИ НА БРЕЙНРОТА!' : !SV.stats.merges ? 'ПЕРЕТАЩИ ОДИНАКОВЫХ ДРУГ НА ДРУГА!' : hasRaid && !SV.stats.raids ? 'ОТКРЫТЫ РЕЖИМЫ! ПОПРОБУЙ НАБЕГ!' : '';
 		SP.forEach((p, i) => {
 			ctx.fillStyle = i < maxS() ? '#ffffff14' : '#00000040';
 			rr(p[0] - 80, p[1] - 80, 160, 160, 26);
 			ctx.fill();
 			if(i >= maxS()) T('🔒', p[0], p[1], 36, '#fff6')
 		});
+		if(SV.boostT > 0) T('⚡ x2 ' + fmt(SV.boostT), 360, 100, 24, '#ffe14d');
 		if(stN()) T('🦹 Кражи: ' + stN() + ' (+' + stN() * 10 + '% к тапу)', 20, 100, 22, '#ffb800', 'left');
 		slots.forEach((s, i) => {
 			const p = SP[s.p];
@@ -1082,7 +1224,7 @@
 			T('🗑', 563, 1213, 46);
 			T(ov && slots.includes(G.drag.s) ? '+' + sellP(G.drag.s.c) : 'ПРОДАТЬ', 645, 1213, ov ? 26 : 20)
 		}
-		if(hasRaid) B(130, 990, 460, 110, '🚨 УКРАСТЬ (НАБЕГ)', '#ff3d3d', () => go('setup'), 36);
+		if(hasRaid) B(130, 990, 460, 110, '🎮 РЕЖИМЫ', '#ff3d3d', () => go('modes'), 46);
 		if(merged && mergeT > 0) {
 			mergeT -= dt;
 			const e = Math.min(1, (2.6 - mergeT) * 5, mergeT * 4),
@@ -1216,7 +1358,7 @@
 		id: 'magnet',
 		n: 'Магнит',
 		i: '🧲',
-		d: 'Алмазы с соседних дорожек',
+		d: 'Притягивает бонусы к игроку (радиус растёт)',
 		cur: 'gems',
 		costs: [15, 40]
 	}, {
@@ -1618,6 +1760,385 @@
 		B(130, 1010, 460, 100, '🚨 СТАРТ', '#ff3d3d', startRaid, 50);
 		back()
 	}
+	const fmt = t => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0'),
+		mult = () => 1 + .05 * (setup.run ? setup.run.mergeLevel : 0);
+	const F = {},
+		J = {};
+
+	function modeRun() {
+		if(!setup.run || !SV.owned[setup.run.id]) setup.run = CH.find(c => SV.owned[c.id]) || CH[0];
+		return setup.run
+	}
+
+	function giveBR(n) {
+		let k = 0;
+		for(let i = 0; i < n; i++) {
+			const b = slots.length;
+			spawn(1);
+			if(slots.length > b) k++;
+			else SV.coins += 500
+		}
+		return k
+	}
+
+	function mres(o) {
+		ctx.fillStyle = '#000a';
+		ctx.fillRect(0, 0, W, H);
+		ctx.fillStyle = '#2a1650';
+		rr(60, 300, 600, 650, 40);
+		ctx.fill();
+		ctx.strokeStyle = '#fff';
+		ctx.lineWidth = 4;
+		ctx.stroke();
+		T(o.t, 360, 370, 50, '#ffe14d');
+		o.l.forEach((l, i) => T(l, 360, 450 + i * 52, 30));
+		if(!o.s.claimed) {
+			B(90, 790, 260, 90, 'ЗАБРАТЬ', '#4cd964', () => {
+				o.cl(1);
+				o.s.claimed = 1;
+				go('modes')
+			}, 34);
+			B(370, 790, 260, 90, 'x2 (РЕКЛАМА)', '#ff7a1a', () => Ads.showRewarded(() => {
+				o.cl(2);
+				o.s.claimed = 1;
+				go('modes')
+			}), 24);
+			B(90, 890, 540, 56, 'ЗАБРАТЬ И ЕЩЁ РАЗ', '#3d9bff', () => {
+				o.cl(1);
+				o.s.claimed = 1;
+				o.again()
+			}, 26)
+		}
+	}
+
+	function modesScr() {
+		bg();
+		topBar();
+		T('🎮 РЕЖИМЫ', 360, 108, 44);
+		const c = modeRun(),
+			ow = CH.filter(h => SV.owned[h.id]),
+			cyc = d => {
+				setup.run = ow[(ow.indexOf(c) + d + ow.length) % ow.length]
+			};
+		drawChar(c, 80, 190, 84);
+		T(nmL(c), 140, 168, 26, RAR[c.rarity].col, 'left');
+		T('Выше уровень брейнрота: награда ×' + mult().toFixed(2), 140, 204, 18, '#ddd', 'left');
+		B(540, 155, 70, 62, '◀', '#555', () => cyc(-1), 30);
+		B(620, 155, 70, 62, '▶', '#555', () => cyc(1), 30);
+		T('СЛОЖНОСТЬ', 360, 262, 22);
+		DIFF.forEach((d, j) => B(20 + j * 175, 278, 165, 70, d.n, setup.d === j ? d.col : '#4a3a6a', () => setup.d = j, j === 3 ? 18 : 20));
+		T('КАРТА', 360, 372, 22);
+		MAPS.forEach((m, j) => B(20 + j * 175, 388, 165, 64, m.n, setup.map === j ? '#3d9bff' : '#4a3a6a', () => setup.map = j, 20));
+		[
+			['🏃 НАБЕГ', 'Укради брейнрота — откроется новый уровень слияния', 'Награда: 💰 монеты · 💎 алмазы · 🔓 слияние', () => go('setup')],
+			['🐦 FLAPPY BRAINROT', 'Лети между труб и собирай 🪙', 'Награда: 💰 много монет · ⚡ буст дохода ×2 · рекорд ' + SV.stats.fb, startFlappy],
+			['🚀 BRAINROT JUMP', 'Прыгай по платформам всё выше', 'Награда: 💎 за высоту · 🎁 брейнроты на арену · рекорд ' + SV.stats.jb + ' м', startJump]
+		].forEach((m, k) => {
+			const y = 480 + k * 165;
+			ctx.fillStyle = '#0008';
+			rr(20, y, 680, 150, 22);
+			ctx.fill();
+			T(m[0], 40, y + 32, 30, '#ffe14d', 'left');
+			T(m[1], 40, y + 74, 19, '#ddd', 'left');
+			T(m[2], 40, y + 112, 19, '#7fe9ff', 'left');
+			B(540, y + 30, 150, 90, 'ИГРАТЬ', '#4cd964', m[3], 28)
+		});
+		back()
+	}
+	// ---- FLAPPY BRAINROT
+	function addPipe(x) {
+		const g = F.gap;
+		F.pipes.push({
+			x, gy: rnd(g / 2 + 190, 1110 - g / 2), ph: rnd(0, 6), coin: Math.random() < .55
+		})
+	}
+
+	function startFlappy() {
+		const d = setup.d,
+			m = setup.map;
+		Object.assign(F, {
+			c: modeRun(),
+			d,
+			m,
+			y: 640,
+			vy: 0,
+			t: 0,
+			x: 200,
+			pipes: [],
+			sp: [210, 240, 270, 305][d] * (m === 3 ? 1.2 : 1),
+			gap: [280, 250, 225, 205][d],
+			g: m === 2 ? 1100 : 1500,
+			score: 0,
+			coins: 0,
+			over: false,
+			started: false,
+			claimed: false
+		});
+		for(let i = 0; i < 3; i++) addPipe(850 + i * 400);
+		scene = 'flappy'
+	}
+
+	function flap() {
+		if(F.over) return;
+		F.started = true;
+		F.vy = -540;
+		SoundManager.play('jump')
+	}
+
+	function flEnd() {
+		F.over = true;
+		SoundManager.play('fail');
+		UI.shake = 12;
+		SV.stats.fb = Math.max(SV.stats.fb, F.score);
+		F.rw = {
+			coins: Math.round((F.score * 20 * (1 + .6 * F.d) + F.coins * 25) * mult()),
+			boost: Math.round(Math.floor(F.score / 5) * 30 * (1 + .25 * F.d))
+		}
+	}
+
+	function flScr(dt) {
+		const M = MAPS[F.m];
+		bg(M.a, M.b);
+		let end = 0;
+		if(!F.started) F.y = 640 + Math.sin(performance.now() / 250) * 14;
+		else if(!F.over) {
+			F.t += dt;
+			F.vy += F.g * dt;
+			F.y += F.vy * dt;
+			F.pipes.forEach(p => p.x -= F.sp * dt);
+			if(F.pipes[0].x < -160) {
+				F.pipes.shift();
+				addPipe(F.pipes[F.pipes.length - 1].x + 400)
+			}
+		}
+		F.pipes.forEach(p => {
+			p.cy = p.gy + (F.m === 1 ? Math.sin(F.t * 1.6 + p.ph) * 90 : 0);
+			if(F.started && !F.over) {
+				if(!p.passed && p.x + 120 < F.x) {
+					p.passed = 1;
+					F.score++;
+					SoundManager.play('collect');
+					float('+1', F.x + 40, F.y - 70, '#ffe14d', 36)
+				}
+				if(p.coin && !p.got && Math.hypot(p.x + 60 - F.x, p.cy - F.y) < 62) {
+					p.got = 1;
+					F.coins++;
+					float('+🪙', F.x + 40, F.y - 70, '#ffe14d', 32);
+					SoundManager.play('collect')
+				}
+				if(F.x + 32 > p.x && F.x - 32 < p.x + 120 && (F.y - 32 < p.cy - F.gap / 2 || F.y + 32 > p.cy + F.gap / 2)) end = 1
+			}
+			ctx.fillStyle = F.m === 1 ? '#c0431c' : F.m === 3 ? '#7fd6ff' : '#3fb34f';
+			ctx.strokeStyle = '#0006';
+			ctx.lineWidth = 4;
+			const t = p.cy - F.gap / 2,
+				b = p.cy + F.gap / 2;
+			rr(p.x, -20, 120, t + 20, 10);
+			ctx.fill();
+			ctx.stroke();
+			rr(p.x - 10, t - 34, 140, 34, 10);
+			ctx.fill();
+			ctx.stroke();
+			rr(p.x, b, 120, 1220 - b, 10);
+			ctx.fill();
+			ctx.stroke();
+			rr(p.x - 10, b, 140, 34, 10);
+			ctx.fill();
+			ctx.stroke();
+			if(p.coin && !p.got) T('🪙', p.x + 60, p.cy, 52)
+		});
+		if(F.started && !F.over && (F.y > 1170 || F.y < 10)) end = 1;
+		if(end) flEnd();
+		ctx.fillStyle = '#7a4f24';
+		ctx.fillRect(0, 1200, W, 80);
+		ctx.save();
+		ctx.translate(F.x, F.y);
+		ctx.rotate(Math.max(-.5, Math.min(.9, F.vy / 900)));
+		drawChar(F.c, 0, 0, 76);
+		ctx.restore();
+		T(F.score, 360, 170, 96);
+		if(!F.started) T('ТАПНИ, ЧТОБЫ ЛЕТЕТЬ!', 360, 420, 36);
+		if(!F.over) B(20, 84, 150, 54, '✖ ВЫХОД', '#555', () => go('modes'), 22);
+		else mres({
+			t: '🐦 ПОЛЁТ ОКОНЧЕН',
+			s: F,
+			l: ['Трубы: ' + F.score + ' (рекорд ' + SV.stats.fb + ')', '🪙 Собрано: ' + F.coins, '💰 +' + F.rw.coins, '⚡ Буст ×2: +' + fmt(F.rw.boost)],
+			cl: k => {
+				SV.coins += F.rw.coins * k;
+				SV.boostT = Math.min(3600, SV.boostT + F.rw.boost * k);
+				SaveManager.save()
+			},
+			again: startFlappy
+		})
+	}
+	// ---- BRAINROT JUMP
+	function newPl(y) {
+		const d = J.d,
+			h = J.h,
+			r = Math.random(),
+			mv = J.m === 3 ? .35 : d >= 1 ? .2 : 0,
+			br = d >= 2 ? .15 : 0,
+			sp = .08,
+			k = r < mv ? 1 : r < mv + br ? 2 : r < mv + br + sp ? 3 : 0,
+			x = rnd(80, 640);
+		return {
+			x, bx: x, y, w: 150, k, ph: rnd(0, 6), it: Math.random() < (J.m === 0 ? .3 : .18) ? 'c' : Math.random() < .012 ? 'r' : ''
+		}
+	}
+
+	function startJump() {
+		const d = setup.d,
+			m = setup.map;
+		Object.assign(J, {
+			c: modeRun(),
+			d,
+			m,
+			x: 360,
+			y: 940,
+			py: 940,
+			vy: 0,
+			cam: 440,
+			pl: [{
+				x: 360,
+				bx: 360,
+				y: 1000,
+				w: 200,
+				k: 0,
+				ph: 0,
+				it: ''
+			}],
+			h: 0,
+			top: 940,
+			coins: 0,
+			over: false,
+			claimed: false,
+			tx: 360,
+			kl: 0,
+			kr: 0,
+			t: 0,
+			jet: 0,
+			g: m === 2 ? 1300 : 1800,
+			lava: 1900
+		});
+		J.vy = -Math.sqrt(2 * J.g * 280);
+		let y = 1000;
+		while(y > -700) {
+			y -= rnd(90, 140);
+			J.pl.push(newPl(y))
+		}
+		scene = 'jumpm'
+	}
+
+	function jpEnd() {
+		J.over = true;
+		SoundManager.play('fail');
+		UI.shake = 12;
+		SV.stats.jb = Math.max(SV.stats.jb, Math.floor(J.h));
+		const h = J.h;
+		J.rw = {
+			coins: Math.round((h * 1.2 * (1 + .4 * J.d) + J.coins * 10) * mult()),
+			gems: Math.min(2 + J.d, Math.floor(h / 600)),
+			br: Math.min(3, Math.floor(h / 900))
+		}
+	}
+
+	function jpScr(dt) {
+		const M = MAPS[J.m];
+		bg(M.a, M.b);
+		if(!J.over) {
+			J.t += dt;
+			J.py = J.y;
+			const dir = (J.kr - J.kl);
+			if(dir) J.tx = Math.max(-30, Math.min(750, J.tx + dir * 900 * dt));
+			const dx = J.tx - J.x;
+			J.x += Math.sign(dx) * Math.min(Math.abs(dx), 950 * dt);
+			if(J.x < -30) J.x += 780;
+			if(J.x > 750) J.x -= 780;
+			if(J.jet > 0) {
+				J.jet -= dt;
+				J.vy = -1500
+			} else J.vy += J.g * dt;
+			J.y += J.vy * dt;
+			J.pl.forEach(p => {
+				if(p.k === 1) p.x = Math.max(60, Math.min(660, p.bx + Math.sin(J.t * 1.2 + p.ph) * 110))
+			});
+			if(J.vy > 0)
+				for(const p of J.pl)
+					if(!p.dead && J.py + 30 <= p.y + 14 && J.y + 30 >= p.y && Math.abs(J.x - p.x) < p.w / 2 + 22) {
+						J.vy = -Math.sqrt(2 * J.g * (p.k === 3 ? 640 : 280));
+						SoundManager.play('jump');
+						burst(J.x, J.y - J.cam + 30, '#fff', 5);
+						if(p.k === 2) p.dead = 1;
+						break
+					}
+			J.pl.forEach(p => {
+				if(p.it && !p.got && Math.abs(p.x - J.x) < 60 && Math.abs(p.y - 34 - J.y) < 64) {
+					p.got = 1;
+					if(p.it === 'c') {
+						J.coins++;
+						float('+🪙', J.x, J.y - J.cam - 60, '#ffe14d', 32);
+						SoundManager.play('collect')
+					} else {
+						J.jet = 1.3;
+						float('🚀 РЫВОК!', J.x, J.y - J.cam - 60, '#ffb800', 36)
+					}
+				}
+			});
+			if(J.y < J.top) {
+				J.top = J.y;
+				J.h = (940 - J.top) / 10
+			}
+			if(J.y - 440 < J.cam) J.cam = J.y - 440;
+			let hy = Math.min(...J.pl.map(p => p.y));
+			while(hy > J.cam - 300) {
+				hy -= rnd(90, Math.min(215, 140 + J.d * 12 + J.h / 90));
+				J.pl.push(newPl(hy))
+			}
+			J.pl = J.pl.filter(p => p.y < J.cam + H + 100 && !(p.dead && p.y > J.cam + H));
+			if(J.m === 1) {
+				J.lava -= (40 + J.d * 16) * (1 + J.h / 3500) * dt;
+				if(J.y + 30 > J.lava) jpEnd()
+			}
+			if(J.y - J.cam > H + 60) jpEnd()
+		}
+		J.pl.forEach(p => {
+			if(p.dead) return;
+			const sy = p.y - J.cam;
+			ctx.fillStyle = ['#4cd964', '#3d9bff', '#b5793a', '#ffb800'][p.k];
+			rr(p.x - p.w / 2, sy, p.w, 24, 10);
+			ctx.fill();
+			ctx.strokeStyle = '#0006';
+			ctx.lineWidth = 3;
+			ctx.stroke();
+			if(p.k === 3) T('🌀', p.x, sy - 8, 36);
+			if(p.it && !p.got) T(p.it === 'c' ? '🪙' : '🚀', p.x, sy - 34, 44)
+		});
+		if(J.m === 1) {
+			ctx.fillStyle = '#ff5a14';
+			ctx.fillRect(0, J.lava - J.cam, W, H)
+		}
+		const sy = J.y - J.cam;
+		drawChar(J.c, J.x, sy - 34, 72);
+		if(J.jet > 0) T('🔥', J.x, sy + 30, 40);
+		T(Math.floor(J.h) + ' м', 360, 150, 60, '#fff');
+		T('🪙 ' + J.coins, 640, 120, 26, '#ffe14d', 'right');
+		if(!J.over) B(20, 84, 150, 54, '✖ ВЫХОД', '#555', () => go('modes'), 22);
+		else {
+			const r = J.rw;
+			mres({
+				t: '🚀 ПАДЕНИЕ!',
+				s: J,
+				l: ['Высота: ' + Math.floor(J.h) + ' м (рекорд ' + SV.stats.jb + ')', '💰 +' + r.coins, '💎 +' + r.gems + ' (за каждые 600 м)', '🎁 Брейнроты на арену: ' + r.br + ' (за 900 м)'],
+				cl: k => {
+					SV.coins += r.coins * k;
+					SV.gems += r.gems * k;
+					giveBR(r.br * k);
+					SaveManager.save()
+				},
+				again: startJump
+			})
+		}
+	}
 
 	function settings() {
 		bg();
@@ -1626,8 +2147,8 @@
 		B(130, 430, 460, 100, '✨ Эффекты  ' + (SV.set.fx ? 'ВКЛ' : 'ВЫКЛ'), '#3d9bff', () => SV.set.fx = !SV.set.fx, 38);
 		B(130, 620, 460, 100, G.rs ? 'НАЖМИ ЕЩЁ РАЗ' : 'СБРОС ПРОГРЕССА', '#ff3d3d', () => {
 			if(G.rs) {
-				SaveManager.reset();
 				slots = [];
+				SaveManager.reset();
 				G.rs = 0;
 				go('menu')
 			} else G.rs = 1
@@ -1736,7 +2257,8 @@
 	}
 
 	function frame(now) {
-		const dt = Math.min(.05, (now - last) / 1000);
+		const dt = Math.max(0, Math.min(.05, (now - last) / 1000));
+		if(SV.boostT > 0) SV.boostT = Math.max(0, SV.boostT - dt);
 		last = now;
 		UI.btns = [];
 		ctx.save();
@@ -1745,10 +2267,11 @@
 			UI.shake *= .85
 		}
 		if(scene === 'raid') {
-			raidUpdate(dt);
+			const n = Math.max(1, Math.ceil(dt / .017));
+			for(let i = 0; i < n; i++) raidUpdate(dt / n);
 			raidDraw()
 		} else({
-			menu, play: () => play(dt), collection, records, shop, settings, setup: setupScr, ach: achScr
+			menu, play: () => play(dt), collection, records, shop, settings, setup: setupScr, ach: achScr, modes: modesScr, flappy: () => flScr(dt), jumpm: () => jpScr(dt)
 		})[scene]();
 		UI.floats.forEach(f => {
 			f.y -= 90 * dt;
@@ -1798,12 +2321,20 @@
 		requestAnimationFrame(frame)
 	}
 
+	function modePointer(x, y) {
+		if(scene !== 'flappy' && scene !== 'jumpm') return;
+		if(UI.btns.some(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h)) return;
+		if(scene === 'flappy') flap();
+		else J.tx = x
+	}
+
 	function pos(e) {
 		const r = cv.getBoundingClientRect();
 		return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]
 	}
 	cv.addEventListener('pointerdown', e => {
 		const [x, y] = pos(e);
+		modePointer(x, y);
 		px0 = [x, y];
 		for(let i = UI.btns.length - 1; i >= 0; i--) {
 			const b = UI.btns[i];
@@ -1825,6 +2356,7 @@
 		}
 	});
 	cv.addEventListener('pointermove', e => {
+		if(scene === 'jumpm') J.tx = pos(e)[0];
 		const d = G.drag;
 		if(!d) return;
 		const [x, y] = pos(e);
@@ -1846,9 +2378,24 @@
 		else if(dy < -40) jump();
 		px0 = null
 	});
-	addEventListener('keydown', e => {
-		if(scene !== 'raid' || R.over) return;
+	addEventListener('keyup', e => {
 		const k = e.key;
+		if(k === 'a' || k === 'ArrowLeft') J.kl = 0;
+		if(k === 'd' || k === 'ArrowRight') J.kr = 0
+	});
+	addEventListener('keydown', e => {
+		const k = e.key;
+		if(scene === 'flappy' && (k === ' ' || k === 'ArrowUp' || k === 'w')) {
+			flap();
+			e.preventDefault();
+			return
+		}
+		if(scene === 'jumpm') {
+			if(k === 'a' || k === 'ArrowLeft') J.kl = 1;
+			if(k === 'd' || k === 'ArrowRight') J.kr = 1;
+			return
+		}
+		if(scene !== 'raid' || R.over) return;
 		if(k === 'e' || k === 'E' || k === 'Shift') {
 			useAb();
 			return
@@ -1864,6 +2411,12 @@
 		last = performance.now();
 		SaveManager.save()
 	});
+	slots = (SV.slots || []).map(o => ({
+		p: o.p,
+		c: CH.find(c => c.id === o.id),
+		sq: 0,
+		bob: rnd(0, 6)
+	})).filter((s, i, a) => s.c && s.p >= 0 && s.p < maxS() && a.findIndex(z => z.p === s.p) === i);
 	requestAnimationFrame(frame);
 	</script>
 </body>
