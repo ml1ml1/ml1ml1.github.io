@@ -114,6 +114,13 @@
 		unlockCost: RAR[a[2]].m * 50,
 		asset: null
 	}));
+	const _lc = {};
+	CH.forEach(c => {
+		_lc[c.rarity] = (_lc[c.rarity] || 0) + 1;
+		c.lvl = c.rarity === 'secret' ? 0 : _lc[c.rarity]
+	});
+	const lvT = c => RAR[c.rarity].n + (c.lvl ? ' · УР.' + c.lvl : ''),
+		nmL = c => c.name + (c.lvl ? ' · УР.' + c.lvl : '');
 	const ASSETS = {
 		characters: {
 			potato_rhino: "assets/characters/potato_rhino.webp",
@@ -134,7 +141,7 @@
 			cosmic_banana: "assets/characters/cosmic_banana.webp",
 			rainbow_unicorn: "assets/characters/rainbow_unicorn.webp",
 			void_penguin: "assets/characters/void_penguin.webp",
-			glitch_cat: "assets/characters/glitch_cat.webp",
+			glitch_cat: "assets/characters/glitch_cat.webp"
 		},
 		backgrounds: {
 			main: null,
@@ -242,7 +249,8 @@
 			},
 			ach: {},
 			up: {},
-			abl: {}
+			abl: {},
+			stolen: {}
 		});
 	let SV = DEF();
 	const SaveManager = {
@@ -262,7 +270,8 @@
 				SV.owned = d.owned || {};
 				SV.ach = d.ach || {};
 				SV.up = d.up || {};
-				SV.abl = d.abl || {}
+				SV.abl = d.abl || {};
+				SV.stolen = d.stolen || Object.fromEntries(CH.filter(c => c.mergeLevel >= 7 && SV.owned[c.id]).map(c => [c.id, 1]))
 			} catch(e) {
 				SV = DEF()
 			}
@@ -465,24 +474,42 @@
 	};
 
 	function spawn() {
-		if(slots.length >= 8) return;
+		const mx = maxS();
+		if(slots.length >= mx) return;
 		const used = slots.map(s => s.p);
 		let p = 0;
 		while(used.includes(p)) p++;
-		const lvl = !SV.stats.merges ? ri(0, 1) : Math.random() < .12 ? 3 : Math.random() < .4 ? 1 : Math.random() < .5 ? 2 : 0;
+		if(p >= mx) return;
+		let lvl;
+		if(!SV.stats.merges) lvl = ri(0, 1);
+		else {
+			const f = lv('filt'),
+				mn = f ? FMIN[f - 1] : 0,
+				am = Math.max(6, stMax()),
+				ps = [];
+			for(let i = mn; i <= Math.min(mn + 3, am); i++) ps.push(i);
+			if(!ps.length) ps.push(Math.min(mn, am));
+			let r = Math.random() * ps.reduce((a, _, i) => a + 4 - i, 0);
+			lvl = ps.find((_, i) => (r -= 4 - i) < 0);
+			if(lvl === undefined) lvl = ps[0]
+		}
 		slots.push({
-			p, c: CH[Math.min(lvl, 19)], sq: 0, bob: rnd(0, 6)
-		});
+			p, c: CH[lvl], sq: 0, bob: rnd(0, 6)
+		})
 	}
 	const SP = [
-		[150, 380],
-		[360, 380],
-		[570, 380],
-		[150, 600],
-		[360, 600],
-		[570, 600],
-		[150, 820],
-		[570, 820]
+		[150, 350],
+		[360, 350],
+		[570, 350],
+		[150, 525],
+		[360, 525],
+		[570, 525],
+		[150, 700],
+		[360, 700],
+		[570, 700],
+		[150, 875],
+		[360, 875],
+		[570, 875]
 	];
 
 	function tapSlot(i) {
@@ -492,7 +519,7 @@
 		combo++;
 		SV.stats.maxCombo = Math.max(SV.stats.maxCombo, combo);
 		const m = combo >= 15 ? 4 : combo >= 8 ? 3 : combo >= 4 ? 2 : 1,
-			v = Math.round(s.c.value * m * (1 + .25 * lv('tap')));
+			v = Math.round(s.c.value * m * (1 + .25 * lv('tap')) * (1 + .1 * stN()));
 		SV.coins += v;
 		s.sq = .3;
 		float('+' + v, SP[s.p][0], SP[s.p][1] - 90, '#ffe14d');
@@ -549,12 +576,10 @@
 	const LX = [160, 360, 560];
 
 	function startRaid() {
-		const un = CH.filter(c => !SV.owned[c.id]),
-			pool = un.length ? un.filter(c => c.mergeLevel >= 6 && c.mergeLevel <= 15) : CH,
-			P = pool.length ? pool : un.length ? un : CH;
+		const nx = CH.find(c => c.mergeLevel >= 7 && !SV.stolen[c.id]);
 		if(!setup.run || !SV.owned[setup.run.id]) setup.run = CH.find(c => SV.owned[c.id]) || CH[0];
 		Object.assign(R, {
-			target: P[ri(0, P.length - 1)],
+			target: nx || CH[ri(7, 19)],
 			run: setup.run,
 			d: setup.d,
 			D: DIFF[setup.d],
@@ -582,7 +607,11 @@
 			bonus: false,
 			bt: 0,
 			bsp: 0,
-			bk: 3
+			bk: 3,
+			px: 360,
+			lt: rnd(7, 10),
+			lw: 0,
+			half: 0
 		});
 		scene = 'raid';
 		SoundManager.play('click');
@@ -600,6 +629,67 @@
 			SoundManager.play('jump')
 		}
 	}
+	const isPK = t => t === 2 || t === 3 || t === 7,
+		HI = [1, 4, 5];
+
+	function spawnPattern() {
+		const D = R.D,
+			M = R.M,
+			d = R.d;
+		R.spawn = rnd(D.a, D.b) * M.sm;
+		const o = (l, y, type, e) => R.obs.push(Object.assign({
+				l, y, type, ph: rnd(0, 6), x: LX[l]
+			}, e || {})),
+			L = ri(0, 2);
+		if(Math.random() < D.gem * M.gm) {
+			o(L, -60, 2);
+			return
+		}
+		const pk = [],
+			add = (k, n) => {
+				for(let i = 0; i < n; i++) pk.push(k)
+			};
+		add('single', 4);
+		add('coins', M.cn);
+		add('pu', M.pu);
+		if(d >= 1) {
+			add('gap', 2);
+			add('rocket', M.rk)
+		}
+		if(d >= 2) {
+			add('bar', 2);
+			add('zig', 2);
+			add('move', M.mv)
+		}
+		if(M.lava) add('lava', M.lava);
+		const k = pk[ri(0, pk.length - 1)];
+		if(k === 'single') o(L, -60, Math.random() < M.wall ? 1 : 0);
+		else if(k === 'coins') {
+			for(let i = 0; i < 5; i++) o(L, -60 - i * 90, 3);
+			R.spawn += .3
+		} else if(k === 'pu') o(L, -60, 7, {
+			k: ri(0, 2)
+		});
+		else if(k === 'gap') {
+			[0, 1, 2].filter(l => l !== L).forEach(l => o(l, -60, 1))
+		} else if(k === 'rocket') o(L, -420, 5, {
+			vm: 2.2
+		});
+		else if(k === 'bar') o(1, -60, 6);
+		else if(k === 'zig') {
+			for(let i = 0; i < 3; i++) o((L + i) % 3, -60 - i * 280, 1);
+			R.spawn += .9
+		} else if(k === 'move') o(1, -60, 4);
+		else if(k === 'lava') {
+			o(L, -200, 8, {
+				h: 260
+			});
+			if(d >= 2) o((L + 1) % 3, -200, 8, {
+				h: 260
+			});
+			R.spawn += .5
+		}
+	}
 
 	function raidUpdate(dt) {
 		if(R.over) return;
@@ -610,25 +700,39 @@
 		R.leap -= dt;
 		R.mag -= dt;
 		R.cd -= dt;
-		if(R.spawn <= 0 && R.t < R.dur - 2 && !R.bonus) {
-			R.spawn = rnd(R.D.a, R.D.b) * R.M.sm;
-			const q = Math.random(),
-				g = R.D.gem * R.M.gm,
-				type = q < g ? 2 : q < g + R.M.cc ? 3 : Math.random() < R.M.wall ? 1 : 0;
-			R.obs.push({
-				l: ri(0, 2),
-				y: -60,
-				type
-			})
+		if(!R.half && R.t > R.dur * .5) {
+			R.half = 1;
+			float('🔥 ПОЛОВИНА ПУТИ!', 360, 820, '#ffb800', 44)
 		}
-		const sp = (520 + R.t * R.M.acc) * R.D.sp * (R.slowT > 0 ? R.slowF : 1);
-		R.obs.forEach(o => o.y += sp * dt);
+		if(R.d >= 1 && !R.bonus) {
+			if(R.lw > 0) {
+				R.lw -= dt;
+				if(R.lw <= 0) {
+					if(R.jy < 60 && R.inv <= 0) {
+						R.gap -= R.D.hit * .8;
+						UI.shake = 14;
+						SoundManager.play('fail');
+						float('💥 ТОЛЧОК!', 360, 900, '#ff4d4d')
+					} else float('✔ УВЕРНУЛСЯ!', 360, 900, '#4cd964')
+				}
+			} else if(R.t > R.lt && R.t < R.dur - 3) {
+				R.lw = 1.1;
+				R.lt = R.t + rnd(8, 12)
+			}
+		}
+		if(R.spawn <= 0 && R.t < R.dur - 2 && !R.bonus) spawnPattern();
+		const sp = (520 + R.t * R.M.acc) * R.D.sp * (R.half ? 1.12 : 1) * (R.slowT > 0 ? R.slowF : 1);
+		R.obs.forEach(o => {
+			o.y += sp * dt * (o.vm || 1);
+			o.x = o.type === 4 ? 360 + Math.sin(R.t * 2.2 + o.ph) * 200 : LX[o.l]
+		});
+		R.px += (LX[R.lane] - R.px) * Math.min(1, (R.M.ice ? 5 : 14) * dt);
 		R.obs = R.obs.filter(o => o.y < 1350 && !o.dead);
 		R.vy -= R.M.g * dt;
 		R.jy = Math.max(0, R.jy + R.vy * dt);
 		if(R.jy === 0 && R.vy < 0) R.vy = 0;
 		for(const o of R.obs)
-			if(o.type > 1 && !o.dead && Math.abs(o.y - 1010) < 70 && Math.abs(o.l - R.lane) <= (R.mag > 0 ? 2 : lv('magnet'))) {
+			if(isPK(o.type) && !o.dead && Math.abs(o.y - 1010) < 70 && Math.abs(o.x - R.px) < 70 + (R.mag > 0 ? 400 : lv('magnet') * 200)) {
 				o.dead = 1;
 				if(o.type === 2) {
 					const g = 1 + (Math.random() < .25 * lv('vein') ? 1 : 0);
@@ -637,6 +741,19 @@
 					SV.stats.gp += g;
 					float('+' + g + '💎', LX[o.l], 900, '#7fe9ff');
 					if(!R.bonus) burst(LX[o.l], 1000, '#7fe9ff', 8)
+				} else if(o.type === 7) {
+					const k = o.k;
+					if(k === 0) {
+						R.shield = Math.min(R.shield + 1, 5);
+						float('🛡 ЩИТ', o.x, 900, '#7fe9ff')
+					} else if(k === 1) {
+						R.slowT = 4;
+						R.slowF = .6;
+						float('⏳ ЗАМЕДЛЕНИЕ', o.x, 900, '#ffb800')
+					} else {
+						R.mag = 6;
+						float('🧲 МАГНИТ', o.x, 900, '#7fe9ff')
+					}
 				} else {
 					const v = R.bonus ? 30 : 15;
 					SV.coins += v;
@@ -646,7 +763,7 @@
 				SoundManager.play('collect')
 			}
 		for(const o of R.obs)
-			if(o.type < 2 && !o.dead && o.l === R.lane && Math.abs(o.y - 1010) < 55 && (o.type === 1 || (R.jy < 60 && R.leap <= 0)) && R.inv <= 0) {
+			if(!isPK(o.type) && !o.dead && (o.type === 6 || Math.abs(o.x - R.px) < 72) && Math.abs(o.y - 1010) < Math.max(55, (o.h || 0) / 2 + 25) && (HI.includes(o.type) || (R.jy < 60 && R.leap <= 0)) && R.inv <= 0) {
 				o.dead = 1;
 				if(R.shield > 0) {
 					R.shield--;
@@ -685,7 +802,7 @@
 				R.bt = 10;
 				R.bsp = 0;
 				R.bk = Math.random() < .25 ? 2 : 3;
-				R.obs = R.obs.filter(o => o.type > 1);
+				R.obs = R.obs.filter(o => isPK(o.type));
 				SoundManager.play('success');
 				UI.shake = 10
 			} else finishWin()
@@ -695,7 +812,17 @@
 	function finishWin() {
 		R.over = true;
 		R.win = true;
-		R.reward = Math.round((300 + R.target.value * 20) * R.D.rw);
+		R.first = !SV.stolen[R.target.id];
+		R.reward = Math.round((200 + R.target.value * 30) * R.D.rw * (R.first ? 1 : .6));
+		R.fg = R.first ? ({
+			rare: 1,
+			epic: 2,
+			legendary: 4,
+			mythic: 8,
+			secret: 15
+		}[R.target.rarity] || 0) : 0;
+		SV.gems += R.fg;
+		SV.stolen[R.target.id] = 1;
 		R.gemRw = R.d >= 2 ? R.d - 1 : 0;
 		SV.gems += R.gemRw;
 		SV.stats.raids++;
@@ -703,7 +830,7 @@
 		SV.stats.bestStreak = Math.max(SV.stats.bestStreak, SV.stats.streak);
 		if(R.gap > .6 && R.d >= 1) SV.stats.fastRaid = 1;
 		if(R.d === 3) SV.stats.hell++;
-		R.first = give(R.target);
+		give(R.target);
 		SV.best = Math.max(SV.best, R.reward);
 		Leaderboard.submitScore(SV.best);
 		SoundManager.play('success');
@@ -718,12 +845,13 @@
 			ctx.fill()
 		}
 		const bt = 1280 - (1 - R.gap) * 0 + 0;
-		T('ЦЕЛЬ: ' + R.target.name.toUpperCase(), 360, 60, 34, RAR[R.target.rarity].col);
+		T('ЦЕЛЬ: ' + nmL(R.target).toUpperCase(), 360, 60, 34, RAR[R.target.rarity].col);
 		bar(60, 100, 600, 30, R.t / R.dur, '#3d9bff');
 		T('БОСС', 60, 160, 24, '#ff7a7a', 'left');
 		if(R.shield > 0) T('🛡 x' + R.shield, 620, 200, 30, '#7fe9ff');
 		if(R.gems) T('💎 +' + R.gems, 20, 200, 30, '#7fe9ff', 'left');
 		if(R.coins) T('🪙 +' + R.coins, 20, 236, 26, '#ffe14d', 'left');
+		if(R.lw > 0) T('⚠ ПРЫГАЙ!', 360, 470, 64, Math.floor(R.t * 10) % 2 ? '#ff3d3d' : '#fff');
 		if(R.bonus) {
 			T('ADMIN ABUSE', 360, 270, 64, Math.floor(R.t * 8) % 2 ? '#ff3d3d' : '#ffe14d');
 			T(Math.max(0, R.bt).toFixed(1) + 'с  ' + (R.bk === 2 ? '💎' : '🪙'), 360, 340, 52)
@@ -737,15 +865,36 @@
 			T('ПОРТАЛ', 360, py + 20, 28, '#003')
 		}
 		R.obs.forEach(o => {
-			if(o.type > 1) {
-				T(o.type === 2 ? '💎' : '🪙', LX[o.l], o.y, 70);
+			const t = o.type,
+				x = o.x || LX[o.l];
+			if(isPK(t)) {
+				T(t === 2 ? '💎' : t === 3 ? '🪙' : ['🛡', '⏳', '🧲'][o.k], x, o.y, 64);
 				return
 			}
-			ctx.fillStyle = o.type ? '#ff4d4d' : '#ffb300';
-			const h = o.type ? 90 : 36;
-			rr(LX[o.l] - 70, o.y - h / 2, 140, h, 12);
+			if(t === 5) {
+				if(o.y < 80) T('❗', x, 190, 60);
+				T('🚀', x, o.y, 70);
+				return
+			}
+			if(t === 6) {
+				ctx.fillStyle = '#ffb300';
+				rr(70, o.y - 18, 580, 36, 12);
+				ctx.fill();
+				T('ПРЫГАЙ!', 360, o.y, 22);
+				return
+			}
+			if(t === 8) {
+				ctx.fillStyle = '#ff5a14';
+				rr(x - 80, o.y - 130, 160, 260, 16);
+				ctx.fill();
+				T('ЛАВА · ПРЫГАЙ', x, o.y, 19);
+				return
+			}
+			ctx.fillStyle = t === 4 ? '#c04dff' : t ? '#ff4d4d' : '#ffb300';
+			const h = t ? 90 : 36;
+			rr(x - 70, o.y - h / 2, 140, h, 12);
 			ctx.fill();
-			T(o.type ? 'СТЕНА' : 'ПРЫГАЙ', LX[o.l], o.y, 22, '#fff')
+			T(t === 4 ? '⇄' : t ? 'СТЕНА' : 'ПРЫГАЙ', x, o.y, 22)
 		});
 		const by = 1250 - (1 - R.gap) * 0 - (R.gap < 1 ? (1 - R.gap) * 210 : 0);
 		ctx.fillStyle = '#7a1030';
@@ -753,7 +902,7 @@
 		ctx.fill();
 		T('👹 ГИГАНТ-БРЕЙНРОТ', 360, by + 50, 34, '#fff');
 		if(R.inv <= 0 || Math.floor(R.t * 12) % 2) {
-			const px = LX[R.lane],
+			const px = R.px,
 				py = 1010 - R.jy;
 			ctx.fillStyle = '#0005';
 			ctx.beginPath();
@@ -780,11 +929,11 @@
 			ctx.stroke();
 			if(R.win) {
 				T('УСПЕХ!', 360, 400, 70, '#4cd964');
-				T('ТЫ УКРАЛ ЕГО!', 360, 470, 36);
+				T(R.first ? '🔓 МОЖНО СЛИВАТЬ ДО НЕГО!' : 'ТЫ УКРАЛ ЕГО!', 360, 470, R.first ? 30 : 36);
 				drawChar(R.target, 360, 610, 170);
-				T(R.target.name, 360, 730, 36, RAR[R.target.rarity].col);
+				T(nmL(R.target), 360, 730, 32, RAR[R.target.rarity].col);
 				T('+' + R.reward + ' МОНЕТ', 360, 775, 44, '#ffe14d');
-				if(R.gemRw) T('+' + R.gemRw + ' 💎', 360, 815, 30, '#7fe9ff');
+				if(R.gemRw + R.fg) T('+' + (R.gemRw + R.fg) + ' 💎', 360, 815, 30, '#7fe9ff');
 				if(!R.claimed) {
 					B(90, 840, 260, 100, 'ЗАБРАТЬ', '#4cd964', () => {
 						SV.coins += R.reward;
@@ -877,34 +1026,62 @@
 		G.acc = (G.acc || 0) + dt;
 		if(G.acc >= 1) {
 			G.acc -= 1;
-			SV.coins += lv('fab') * 2
+			SV.coins += Math.round(fabR())
 		}
-		if(lv('fab')) T('🏭 +' + lv('fab') * 2 + '/с', 600, 100, 24, '#ffe14d');
+		if(lv('fab')) T('🏭 +' + Math.round(fabR()) + '/с', 600, 100, 24, '#ffe14d');
 		if(spawnT <= 0) {
-			spawnT = 2.2;
+			spawnT = SPN[lv('spawn')];
 			spawn()
 		}
 		hint = !SV.stats.taps ? 'ЖМИ НА БРЕЙНРОТА!' : !SV.stats.merges ? 'ПЕРЕТАЩИ ОДИНАКОВЫХ ДРУГ НА ДРУГА!' : hasRaid && !SV.stats.raids ? 'ТВОЙ ПЕРВЫЙ НАБЕГ ГОТОВ!' : '';
+		SP.forEach((p, i) => {
+			ctx.fillStyle = i < maxS() ? '#ffffff14' : '#00000040';
+			rr(p[0] - 80, p[1] - 80, 160, 160, 26);
+			ctx.fill();
+			if(i >= maxS()) T('🔒', p[0], p[1], 36, '#fff6')
+		});
+		if(stN()) T('🦹 Кражи: ' + stN() + ' (+' + stN() * 10 + '% к тапу)', 20, 100, 22, '#ffb800', 'left');
 		slots.forEach((s, i) => {
 			const p = SP[s.p];
 			s.sq *= .88;
 			UI.btns.push({
-				x: p[0] - 90,
-				y: p[1] - 90,
-				w: 180,
-				h: 180,
+				x: p[0] - 85,
+				y: p[1] - 85,
+				w: 170,
+				h: 170,
 				drag: s
 			});
-			if(G.drag && G.drag.moved && s !== G.drag.s && s.c === G.drag.s.c && Math.hypot(G.drag.x - p[0], G.drag.y - p[1]) < 100) {
+			if(G.drag && G.drag.moved && s !== G.drag.s && s.c === G.drag.s.c && Math.hypot(G.drag.x - p[0], G.drag.y - p[1]) < 90) {
 				ctx.fillStyle = '#4cd96499';
-				rr(p[0] - 100, p[1] - 100, 200, 200, 30);
+				rr(p[0] - 88, p[1] - 88, 176, 176, 28);
 				ctx.fill()
 			}
-			if(!(G.drag && G.drag.s === s)) drawChar(s.c, p[0], p[1] + Math.sin(performance.now() / 350 + s.bob) * 6, 160, s.sq);
-			T(RAR[s.c.rarity].n, p[0], p[1] + 105, 20, RAR[s.c.rarity].col)
+			if(!(G.drag && G.drag.s === s)) drawChar(s.c, p[0], p[1] + Math.sin(performance.now() / 350 + s.bob) * 6, 140, s.sq);
+			T(lvT(s.c), p[0], p[1] + 86, 15, RAR[s.c.rarity].col);
+			if(s.c.lvl) {
+				ctx.fillStyle = RAR[s.c.rarity].col;
+				ctx.beginPath();
+				ctx.arc(p[0] - 62, p[1] - 62, 21, 0, 7);
+				ctx.fill();
+				ctx.strokeStyle = '#fff';
+				ctx.lineWidth = 3;
+				ctx.stroke();
+				T(s.c.lvl, p[0] - 62, p[1] - 61, 26, '#fff')
+			}
 		});
-		if(G.drag && G.drag.moved && slots.includes(G.drag.s)) drawChar(G.drag.s.c, G.drag.x, G.drag.y, 190, .06);
+		if(G.drag && G.drag.moved && slots.includes(G.drag.s)) drawChar(G.drag.s.c, G.drag.x, G.drag.y, 160, .06);
 		if(hint) T(hint, 360, 262, 26, '#fff');
+		if(lv('bin')) {
+			const ov = G.drag && G.drag.moved && G.drag.x >= 520 && G.drag.y >= 1165;
+			ctx.fillStyle = ov ? '#ff3d3dcc' : '#00000088';
+			rr(520, 1165, 180, 95, 22);
+			ctx.fill();
+			ctx.strokeStyle = '#fff8';
+			ctx.lineWidth = 3;
+			ctx.stroke();
+			T('🗑', 563, 1213, 46);
+			T(ov && slots.includes(G.drag.s) ? '+' + sellP(G.drag.s.c) : 'ПРОДАТЬ', 645, 1213, ov ? 26 : 20)
+		}
 		if(hasRaid) B(130, 990, 460, 110, '🚨 УКРАСТЬ (НАБЕГ)', '#ff3d3d', () => go('setup'), 36);
 		if(merged && mergeT > 0) {
 			mergeT -= dt;
@@ -921,7 +1098,7 @@
 			T('→', 208, y + 36, 36);
 			drawChar(merged.n, 266, y + 36, 58);
 			T(merged.first ? 'НОВЫЙ БРЕЙНРОТ!' : 'СЛИЯНИЕ!', 470, y + 23, 22, '#ffe14d');
-			T(merged.n.name, 470, y + 51, 20, RAR[merged.n.rarity].col);
+			T(nmL(merged.n), 470, y + 51, 20, RAR[merged.n.rarity].col);
 			ctx.globalAlpha = 1
 		}
 		back()
@@ -943,7 +1120,7 @@
 			ctx.fill();
 			if(o) {
 				drawChar(c, x + 75, y + 65, 100);
-				T(RAR[c.rarity].n, x + 75, y + 145, 18, RAR[c.rarity].col)
+				T(lvT(c), x + 75, y + 145, 14, RAR[c.rarity].col)
 			} else {
 				T('???', x + 75, y + 60, 40, '#777');
 				T('ЗАКРЫТО', x + 75, y + 120, 22, '#777')
@@ -963,115 +1140,152 @@
 		T('Лучшая награда за набег: ' + SV.best, 360, 640, 30, '#ffe14d');
 		back()
 	}
+	const SPN = [2.2, 2, 1.8, 1.6, 1.4, 1.2, 1],
+		FMIN = [3, 6, 10, 13],
+		FN = ['Common', 'Uncommon', 'Rare', 'Epic'];
+	const stN = () => Object.keys(SV.stolen).length,
+		stMax = () => CH.reduce((m, c) => SV.stolen[c.id] ? Math.max(m, c.mergeLevel) : m, -1),
+		maxS = () => 6 + lv('slots'),
+		fabR = () => lv('fab') * 2 * (1 + .25 * stN()),
+		sellP = c => Math.round(c.value * 10 * (1 + .25 * lv('tap')) * (1 + .1 * stN()));
 	const UPG = [{
 		id: 'tap',
 		n: 'Сильный тап',
 		i: '👆',
-		d: '+25% монет за каждый тап',
+		d: l => '+25% монет за тап · сейчас +' + 25 * l + '%',
 		cur: 'coins',
-		base: 80,
-		mul: 1.55,
-		max: 10
+		costs: [150, 300, 600, 1200, 2500, 5000, 10000, 20000, 40000, 80000]
+	}, {
+		id: 'slots',
+		n: 'Слот на арене',
+		i: '🧩',
+		d: l => 'Мест: ' + (6 + l) + ' → ' + (7 + l),
+		cur: 'coins',
+		costs: [600, 1500, 3500, 8000, 18000, 40000]
+	}, {
+		id: 'spawn',
+		n: 'Скорость спавна',
+		i: '⏱',
+		d: l => 'Новый брейнрот: ' + SPN[l] + 'с → ' + SPN[l + 1] + 'с',
+		cur: 'coins',
+		costs: [500, 1200, 3000, 7000, 16000, 35000]
+	}, {
+		id: 'filt',
+		n: 'Охота на редких',
+		i: '🎯',
+		d: l => 'Не спавнятся: ' + FN.slice(0, l + 1).join(', ') + (FMIN[l] <= Math.max(6, stMax()) ? '' : ' 🔒'),
+		curs: ['coins', 'coins', 'gems', 'gems'],
+		costs: [2500, 12000, 25, 60],
+		req: l => FMIN[l] <= Math.max(6, stMax())
+	}, {
+		id: 'bin',
+		n: 'Корзина',
+		i: '🗑',
+		d: 'Тащи брейнрота в корзину = монеты',
+		cur: 'coins',
+		costs: [3000]
 	}, {
 		id: 'combo',
 		n: 'Долгое комбо',
 		i: '🔥',
 		d: '+0.3 сек до сброса комбо',
 		cur: 'coins',
-		base: 150,
-		mul: 1.7,
-		max: 5
+		costs: [300, 800, 2000, 5000, 12000]
 	}, {
 		id: 'fab',
 		n: 'Фабрика',
 		i: '🏭',
-		d: '+2 монеты в секунду',
+		d: l => '+2/с за ур. (×кражи) · сейчас ' + Math.round(fabR()) + '/с',
 		cur: 'coins',
-		base: 400,
-		mul: 1.6,
-		max: 10
+		costs: [500, 850, 1450, 2450, 4200, 7100, 12000, 20500, 35000, 59000]
 	}, {
 		id: 'slow',
 		n: 'Тормоз босса',
 		i: '🐌',
-		d: 'Босс быстрее отстаёт',
+		d: 'Босс быстрее отстаёт в набеге',
 		cur: 'coins',
-		base: 300,
-		mul: 1.9,
-		max: 5
+		costs: [400, 900, 2000, 4500, 10000]
 	}, {
 		id: 'shield',
 		n: 'Щит',
 		i: '🛡',
 		d: '+1 защита от удара в набеге',
 		cur: 'gems',
-		base: 6,
-		mul: 2.4,
-		max: 3
+		costs: [8, 20, 45]
 	}, {
 		id: 'magnet',
 		n: 'Магнит',
 		i: '🧲',
 		d: 'Алмазы с соседних дорожек',
 		cur: 'gems',
-		base: 10,
-		mul: 2.5,
-		max: 2
+		costs: [15, 40]
 	}, {
 		id: 'vein',
 		n: 'Алмазная жила',
 		i: '💎',
 		d: '+25% шанс двойного алмаза',
 		cur: 'gems',
-		base: 12,
-		mul: 2.2,
-		max: 3
+		costs: [15, 35, 80]
 	}];
 	const lv = id => SV.up[id] || 0,
-		cost = u => Math.round(u.base * Math.pow(u.mul, lv(u.id)));
+		ucur = u => u.curs ? u.curs[lv(u.id)] : u.cur;
 
 	function buy(u) {
 		const l = lv(u.id);
-		if(l >= u.max) return;
-		const c = cost(u);
-		if(SV[u.cur] < c) {
-			UI.toast('Не хватает ' + (u.cur === 'gems' ? '💎' : '💰'));
+		if(l >= u.costs.length) return;
+		if(u.req && !u.req(l)) {
+			UI.toast('🔒 Сначала укради: ' + CH[FMIN[l]].name);
 			SoundManager.play('fail');
 			return
 		}
-		SV[u.cur] -= c;
+		const c = u.costs[l],
+			cu = ucur(u);
+		if(SV[cu] < c) {
+			UI.toast('Не хватает ' + (cu === 'gems' ? '💎' : '💰'));
+			SoundManager.play('fail');
+			return
+		}
+		SV[cu] -= c;
 		SV.up[u.id] = l + 1;
 		SV.stats.ups++;
 		SoundManager.play('merge');
-		UI.toast('Куплено: ' + u.n + ' ' + (l + 1) + '/' + u.max);
+		UI.toast('Куплено: ' + u.n + ' ' + (l + 1) + '/' + u.costs.length);
 		SaveManager.save()
 	}
+	let shopPage = 0;
 
 	function shop() {
 		bg();
 		topBar();
 		T('🛒 УЛУЧШЕНИЯ', 360, 108, 40);
-		UPG.forEach((u, k) => {
+		UPG.slice(shopPage * 6, shopPage * 6 + 6).forEach((u, k) => {
 			const y = 140 + k * 118,
 				l = lv(u.id),
-				mx = l >= u.max,
-				c = cost(u),
-				ok = !mx && SV[u.cur] >= c,
-				g = u.cur === 'gems';
+				n = u.costs.length,
+				mx = l >= n,
+				c = mx ? 0 : u.costs[l],
+				cu = mx ? '' : ucur(u),
+				g = cu === 'gems',
+				lock = !mx && u.req && !u.req(l),
+				ok = !mx && !lock && SV[cu] >= c;
 			ctx.fillStyle = '#0008';
 			rr(20, y, 680, 108, 20);
 			ctx.fill();
 			T(u.i, 70, y + 54, 52);
-			T(u.n + '  ' + l + '/' + u.max, 120, y + 34, 28, '#fff', 'left');
-			T(u.d, 120, y + 76, 22, '#ccc', 'left');
-			B(500, y + 14, 190, 80, mx ? 'МАКС' : (g ? '💎 ' : '💰 ') + c, mx ? '#444' : ok ? (g ? '#17a6c9' : '#4cd964') : '#7a5a5a', () => buy(u), 30)
+			T(u.n + '  ' + l + '/' + n, 120, y + 32, 28, '#fff', 'left');
+			T(mx ? 'Максимум' : (typeof u.d === 'function' ? u.d(l) : u.d), 120, y + 76, 20, '#ccc', 'left');
+			B(500, y + 14, 190, 80, mx ? 'МАКС' : lock ? '🔒 НАБЕГ' : (g ? '💎 ' : '💰 ') + c, mx ? '#444' : lock ? '#555' : ok ? (g ? '#17a6c9' : '#4cd964') : '#7a5a5a', () => buy(u), lock ? 24 : 30)
 		});
+		const pg = Math.ceil(UPG.length / 6);
+		B(130, 862, 150, 70, '◀', '#3d9bff', () => shopPage = Math.max(0, shopPage - 1), 36);
+		T((shopPage + 1) + ' / ' + pg, 360, 897, 30);
+		B(440, 862, 150, 70, '▶', '#3d9bff', () => shopPage = Math.min(pg - 1, shopPage + 1), 36);
 		B(130, 985, 460, 80, '📦 СУНДУК (РЕКЛАМА)', '#ff7a1a', () => Ads.showRewarded(() => {
 			if(Math.random() < .2) {
 				SV.gems += 1;
 				UI.toast('+1 💎')
 			} else {
-				const c = ri(200, 500);
+				const c = ri(300, 700);
 				SV.coins += c;
 				UI.toast('+' + c + ' 💰')
 			}
@@ -1206,6 +1420,12 @@
 	}];
 	const MAPS = [{
 		n: '🌳 ПАРК',
+		cn: 3,
+		pu: 3,
+		rk: 1,
+		mv: 1,
+		lava: 0,
+		t: 'бонусы и монетные дорожки',
 		a: '#2f7a3a',
 		b: '#0f2f18',
 		wall: .38,
@@ -1217,6 +1437,12 @@
 		gm: 1
 	}, {
 		n: '🌋 ЛАВА',
+		cn: 1,
+		pu: 1,
+		rk: 2,
+		mv: 0,
+		lava: 3,
+		t: 'лавовые лужи, прыгай далеко',
 		a: '#8a2a14',
 		b: '#2a0a08',
 		wall: .6,
@@ -1228,6 +1454,12 @@
 		gm: 1.3
 	}, {
 		n: '🌌 КОСМОС',
+		cn: 3,
+		pu: 2,
+		rk: 1,
+		mv: 3,
+		lava: 0,
+		t: 'движущиеся стены, мало гравитации',
 		a: '#1b2a7a',
 		b: '#06061a',
 		wall: .3,
@@ -1239,6 +1471,13 @@
 		gm: 1
 	}, {
 		n: '❄ ЛЁД',
+		cn: 1,
+		pu: 2,
+		rk: 3,
+		mv: 1,
+		lava: 0,
+		ice: 1,
+		t: 'скольжение и ракеты',
 		a: '#2a7a9a',
 		b: '#0a2a3a',
 		wall: .45,
@@ -1316,7 +1555,7 @@
 		if(e.clr) {
 			const r = e.clr * k;
 			R.obs.forEach(o => {
-				if(o.type < 2 && o.y > 1010 - r) {
+				if(!isPK(o.type) && o.y > 1010 - r) {
 					o.dead = 1;
 					burst(LX[o.l], Math.max(0, o.y), '#fff', 3)
 				}
@@ -1358,7 +1597,7 @@
 				});
 				drawChar(h, x + 45, y + 44, 66);
 				T(AB[h.mergeLevel][1], x + 112, y + 30, 30);
-				T('Ур.' + abl(h.id), x + 112, y + 64, 22, RAR[h.rarity].col)
+				T('★' + abl(h.id), x + 112, y + 64, 22, RAR[h.rarity].col)
 			} else T('???', x + 82, y + 44, 32, '#777')
 		});
 		ctx.fillStyle = '#0009';
@@ -1367,15 +1606,15 @@
 		const a = AB[c.mergeLevel],
 			l = abl(c.id),
 			k = abCost(c, l);
-		T(c.name, 40, 642, 30, RAR[c.rarity].col, 'left');
-		T(a[1] + ' ' + a[0] + '  Ур.' + l + '/5', 40, 684, 26, '#ffb800', 'left');
+		T(nmL(c), 40, 642, 30, RAR[c.rarity].col, 'left');
+		T(a[1] + ' ' + a[0] + '  ★' + l + '/5', 40, 684, 26, '#ffb800', 'left');
 		T(abDesc(a, l), 360, 725, 19, '#ddd');
 		B(500, 628, 190, 70, l >= 5 ? 'МАКС' : (k.cur === 'gems' ? '💎 ' : '💰 ') + k.v, l >= 5 ? '#444' : SV[k.cur] >= k.v ? (k.cur === 'gems' ? '#17a6c9' : '#4cd964') : '#7a5a5a', () => buyAb(c), 28);
 		T('СЛОЖНОСТЬ', 360, 768, 24, '#fff');
 		DIFF.forEach((d, j) => B(20 + j * 175, 782, 165, 76, d.n, setup.d === j ? d.col : '#4a3a6a', () => setup.d = j, j === 3 ? 19 : 22));
 		T('КАРТА', 360, 880, 24, '#fff');
 		MAPS.forEach((m, j) => B(20 + j * 175, 895, 165, 68, m.n, setup.map === j ? '#3d9bff' : '#4a3a6a', () => setup.map = j, 22));
-		T('Награда x' + DIFF[setup.d].rw, 360, 985, 26, '#ffe14d');
+		T('Награда x' + DIFF[setup.d].rw + ' · ' + MAPS[setup.map].t, 360, 985, 21, '#ffe14d');
 		B(130, 1010, 460, 100, '🚨 СТАРТ', '#ff3d3d', startRaid, 50);
 		back()
 	}
@@ -1400,7 +1639,7 @@
 		px0 = null;
 
 	function slotAt(x, y, ex) {
-		return slots.find(s => s !== ex && Math.hypot(x - SP[s.p][0], y - SP[s.p][1]) < 100)
+		return slots.find(s => s !== ex && Math.hypot(x - SP[s.p][0], y - SP[s.p][1]) < 90)
 	}
 
 	function endDrag(e) {
@@ -1412,8 +1651,23 @@
 			return
 		}
 		const [x, y] = pos(e), t = slotAt(x, y, d.s);
-		if(t && t.c === d.s.c && t.c.mergeLevel < 19) doMerge(slots.indexOf(d.s), slots.indexOf(t));
-		else if(t) {
+		if(lv('bin') && x >= 520 && y >= 1165) {
+			const pr = sellP(d.s.c);
+			SV.coins += pr;
+			slots = slots.filter(q => q !== d.s);
+			float('+' + pr + ' 💰', x - 60, y - 60, '#ffe14d', 40);
+			burst(x, y, '#ffe14d', 10);
+			SoundManager.play('collect');
+			return
+		}
+		if(t && t.c === d.s.c && t.c.mergeLevel < 19) {
+			const nn = CH[t.c.mergeLevel + 1];
+			if(nn.mergeLevel <= 6 || SV.stolen[nn.id]) doMerge(slots.indexOf(d.s), slots.indexOf(t));
+			else {
+				float('🔒 Укради: ' + nn.name, SP[t.p][0], SP[t.p][1] - 100, '#ff7a7a', 28);
+				SoundManager.play('fail')
+			}
+		} else if(t) {
 			float('Нужны одинаковые!', SP[t.p][0], SP[t.p][1] - 100, '#ff7a7a', 30);
 			SoundManager.play('fail')
 		}
