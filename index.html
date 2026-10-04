@@ -1,0 +1,1617 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+	<title>BRAINROT RUSH</title>
+	<style>
+	html,
+	body {
+		margin: 0;
+		height: 100%;
+		background: #1b1030;
+		overflow: hidden;
+		touch-action: none
+	}
+	
+	canvas {
+		position: absolute;
+		inset: 0;
+		margin: auto;
+		touch-action: none;
+		background: #2a1650
+	}
+	</style>
+</head>
+
+<body>
+	<canvas id="c" width="720" height="1280"></canvas>
+	<script>
+	"use strict";
+	const cv = document.getElementById('c'),
+		ctx = cv.getContext('2d'),
+		W = 720,
+		H = 1280;
+
+	function fit() {
+		const s = Math.min(innerWidth / W, innerHeight / H);
+		cv.style.width = W * s + 'px';
+		cv.style.height = H * s + 'px'
+	}
+	addEventListener('resize', fit);
+	fit();
+	const TOUCH = ('ontouchstart' in window) || matchMedia('(pointer:coarse)').matches;
+	const rnd = (a, b) => a + Math.random() * (b - a),
+		ri = (a, b) => Math.floor(rnd(a, b + 1));
+	/* ===== DATA ===== */
+	const RAR = {
+		common: {
+			n: 'ОБЫЧНЫЙ',
+			col: '#9aa5b1',
+			m: 1
+		},
+		uncommon: {
+			n: 'НЕОБЫЧНЫЙ',
+			col: '#4cd964',
+			m: 2
+		},
+		rare: {
+			n: 'РЕДКИЙ',
+			col: '#3d9bff',
+			m: 4
+		},
+		epic: {
+			n: 'ЭПИЧЕСКИЙ',
+			col: '#b050ff',
+			m: 8
+		},
+		legendary: {
+			n: 'ЛЕГЕНДАРНЫЙ',
+			col: '#ffb800',
+			m: 20
+		},
+		mythic: {
+			n: 'МИФИЧЕСКИЙ',
+			col: '#ff3d7f',
+			m: 50
+		},
+		secret: {
+			n: 'СЕКРЕТНЫЙ',
+			col: '#00f0d0',
+			m: 100
+		}
+	};
+	const LIST = [
+		['potato_rhino', 'Potato Rhino', 'common'],
+		['banana_frog', 'Banana Frog', 'common'],
+		['pizza_cat', 'Pizza Cat', 'common'],
+		['disco_duck', 'Disco Duck', 'uncommon'],
+		['cheese_penguin', 'Cheese Penguin', 'uncommon'],
+		['pancake_gorilla', 'Pancake Gorilla', 'uncommon'],
+		['turbo_capybara', 'Turbo Capybara', 'rare'],
+		['sushi_crocodile', 'Sushi Crocodile', 'rare'],
+		['rocket_chicken', 'Rocket Chicken', 'rare'],
+		['cactus_cow', 'Cactus Cow', 'rare'],
+		['ninja_tomato', 'Ninja Tomato', 'epic'],
+		['lava_hamster', 'Lava Hamster', 'epic'],
+		['moon_donkey', 'Moon Donkey', 'epic'],
+		['toilet_dragon', 'Toilet Dragon', 'legendary'],
+		['diamond_frog', 'Diamond Frog', 'legendary'],
+		['golden_potato', 'Golden Potato', 'legendary'],
+		['cosmic_banana', 'Cosmic Banana', 'mythic'],
+		['rainbow_unicorn', 'Rainbow Unicorn', 'mythic'],
+		['void_penguin', 'Void Penguin', 'mythic'],
+		['glitch_cat', 'Glitch Cat', 'secret']
+	];
+	// asset: null -> placeholder. Put "assets/characters/x.webp" here (or in ASSETS) to use real art.
+	const CH = LIST.map((a, i) => ({
+		id: a[0],
+		name: a[1],
+		rarity: a[2],
+		value: RAR[a[2]].m,
+		mergeLevel: i,
+		unlockCost: RAR[a[2]].m * 50,
+		asset: null
+	}));
+	const ASSETS = {
+		characters: {
+			potato_rhino: "assets/characters/potato_rhino.webp",
+			banana_frog: "assets/characters/banana_frog.webp",
+			pizza_cat: "assets/characters/pizza_cat.webp",
+			disco_duck: "assets/characters/disco_duck.webp",
+			cheese_penguin: "assets/characters/cheese_penguin.webp",
+			pancake_gorilla: "assets/characters/pancake_gorilla.webp",
+			turbo_capybara: "assets/characters/turbo_capybara.webp",
+			sushi_crocodile: "assets/characters/sushi_crocodile.webp",
+			rocket_chicken: "assets/characters/rocket_chicken.webp",
+			cactus_cow: "assets/characters/cactus_cow.webp",
+			ninja_tomato: "assets/characters/ninja_tomato.webp",
+			moon_donkey: "assets/characters/moon_donkey.webp",
+			toilet_dragon: "assets/characters/toilet_dragon.webp",
+			diamond_frog: "assets/characters/diamond_frog.webp",
+			golden_potato: "assets/characters/golden_potato.webp",
+			cosmic_banana: "assets/characters/cosmic_banana.webp",
+			rainbow_unicorn: "assets/characters/rainbow_unicorn.webp",
+			void_penguin: "assets/characters/void_penguin.webp",
+			glitch_cat: "assets/characters/glitch_cat.webp",
+		},
+		backgrounds: {
+			main: null,
+			raid: null
+		},
+		ui: {}
+	}; // e.g. characters:{pizza_cat:"assets/characters/pizza_cat.webp"}
+	/* ===== SYSTEMS ===== */
+	const AM = {
+		cache: {},
+		load(id, path) {
+			path = path || ASSETS.characters[id] || (CH.find(c => c.id === id) || {}).asset;
+			if(!path || this.cache[id]) return;
+			const im = new Image();
+			im.onload = () => this.cache[id] = im;
+			im.onerror = () => {};
+			im.src = path
+		},
+		loadCharacter(id) {
+			this.load(id)
+		},
+		get(id) {
+			const i = this.cache[id];
+			return i && i.naturalWidth ? i : null
+		}
+	};
+	CH.forEach(c => AM.loadCharacter(c.id));
+	const SoundManager = {
+		a: {},
+		play(n) {
+			try {
+				if(!SV.set.sound) return;
+				let a = this.a[n];
+				if(a === undefined) {
+					a = new Audio('assets/sounds/' + n + '.mp3');
+					a.onerror = () => this.a[n] = null;
+					this.a[n] = a
+				}
+				if(a) {
+					a.currentTime = 0;
+					const p = a.play();
+					p && p.catch(() => {})
+				}
+			} catch(e) {}
+		}
+	};
+	const Ads = {
+		isAvailable() {
+			return true
+		}, showRewarded(cb) { /* TODO Yandex: ysdk.adv.showRewardedVideo */
+			UI.toast('[ ДЕМО-РЕКЛАМА ] Награда получена!');
+			setTimeout(() => cb && cb(true), 400)
+		}, showInterstitial(cb) {
+			cb && cb()
+		}
+	};
+	const YandexSDK = {
+		ysdk: null,
+		init() {
+			try {
+				if(window.YaGames) YaGames.init().then(s => this.ysdk = s).catch(() => {})
+			} catch(e) {}
+		}
+	};
+	YandexSDK.init();
+	const Leaderboard = {
+		submitScore(s) {}, getScores() {
+			return [
+				['Мими', 9800],
+				['Бобик', 7400],
+				['Зед', 5200],
+				['Нина', 3100],
+				['Кузя', 1500]
+			]
+		}
+	};
+	const KEY = 'brainrot_rush_v1',
+		DEF = () => ({
+			coins: 0,
+			gems: 0,
+			owned: {},
+			best: 0,
+			stats: {
+				taps: 0,
+				merges: 0,
+				raids: 0,
+				streak: 0,
+				bestStreak: 0,
+				fastRaid: 0,
+				maxCombo: 0,
+				abU: 0,
+				ups: 0,
+				gp: 0,
+				ab: 0,
+				hell: 0,
+				days: 0
+			},
+			set: {
+				sound: true,
+				fx: true
+			},
+			daily: {
+				date: '',
+				day: 0
+			},
+			ach: {},
+			up: {},
+			abl: {}
+		});
+	let SV = DEF();
+	const SaveManager = {
+		save() {
+			try {
+				localStorage.setItem(KEY, JSON.stringify(SV))
+			} catch(e) {}
+		}, load() {
+			try {
+				const d = JSON.parse(localStorage.getItem(KEY));
+				if(!d || typeof d.coins !== 'number') throw 0;
+				const b = DEF();
+				SV = Object.assign(b, d);
+				SV.stats = Object.assign(b.stats, d.stats);
+				SV.set = Object.assign(b.set, d.set);
+				SV.daily = Object.assign(b.daily, d.daily);
+				SV.owned = d.owned || {};
+				SV.ach = d.ach || {};
+				SV.up = d.up || {};
+				SV.abl = d.abl || {}
+			} catch(e) {
+				SV = DEF()
+			}
+		}, reset() {
+			SV = DEF();
+			this.save()
+		}
+	};
+	SaveManager.load();
+	setInterval(() => SaveManager.save(), 5000);
+	addEventListener('beforeunload', () => SaveManager.save());
+	/* ===== ACHIEVEMENTS ===== */
+	const cnt = r => CH.filter(c => c.rarity === r && SV.owned[c.id]).length,
+		st = k => () => SV.stats[k],
+		A = (id, n, d, g, cur, r) => ({
+			id, n, d, g, cur, r
+		});
+	const ACH = [A('first', 'ПЕРВЫЙ БРЕЙНРОТ', 'Получи первого брейнрота', 1, () => own(), ['c', 100]), A('tap500', 'ТАПАЛКА', 'Сделай 500 тапов', 500, st('taps'), ['c', 150]), A('tap5k', 'ТАП-МАСТЕР', 'Сделай 5000 тапов', 5000, st('taps'), ['g', 1]),
+		A('mrg10', 'МАСТЕР СЛИЯНИЯ', 'Сделай 10 слияний', 10, st('merges'), ['c', 200]), A('mrg50', 'ФЬЮЖН-БОГ', 'Сделай 50 слияний', 50, st('merges'), ['g', 2]), A('cmb10', 'КОМБО!', 'Набери комбо x10', 10, st('maxCombo'), ['c', 150]),
+		A('col10', 'КОЛЛЕКЦИОНЕР', 'Открой 10 брейнротов', 10, () => own(), ['c', 400]), A('col20', 'БОГ БРЕЙНРОТОВ', 'Открой всех 20 брейнротов', 20, () => own(), ['g', 5]),
+		A('rare', 'РЕДКАЯ НАХОДКА', 'Получи Rare брейнрота', 1, () => cnt('rare'), ['c', 200]), A('epic', 'ЭПИК!', 'Получи Epic брейнрота', 1, () => cnt('epic'), ['g', 1]), A('leg', 'ЛЕГЕНДА!', 'Получи Legendary брейнрота', 1, () => cnt('legendary'), ['g', 3]),
+		A('myth', 'МИФ', 'Получи Mythic брейнрота', 1, () => cnt('mythic'), ['g', 4]), A('sec', 'СЕКРЕТ', 'Получи Secret брейнрота', 1, () => cnt('secret'), ['g', 6]), A('thief', 'ВОР', 'Успешно пройди набег', 1, st('raids'), ['c', 250]),
+		A('raid10', 'МАТЁРЫЙ ВОР', 'Пройди 10 набегов', 10, st('raids'), ['g', 2]), A('unst', 'НЕУДЕРЖИМЫЙ', 'Пройди 5 набегов подряд', 5, st('bestStreak'), ['g', 2]), A('speed', 'СПИДРАННЕР', 'Победи на ПОГОНЕ+ с большим запасом', 1, st('fastRaid'), ['g', 1]),
+		A('gem10', 'ОХОТНИК ЗА 💎', 'Собери 10 алмазов в набегах', 10, st('gp'), ['c', 300]), A('gem50', 'АЛМАЗНЫЙ КОРОЛЬ', 'Собери 50 алмазов в набегах', 50, st('gp'), ['g', 3]), A('abuse', 'ADMIN ABUSE!', 'Поймай ADMIN ABUSE', 1, st('ab'), ['g', 2]),
+		A('hell', 'АДСКИЙ ВОР', 'Победи на АДСКОМ РАШЕ', 1, st('hell'), ['g', 4]), A('skill', 'СУПЕРСИЛА', 'Используй способности 25 раз', 25, st('abU'), ['c', 150]), A('ups', 'КАЧОК', 'Купи 5 улучшений', 5, st('ups'), ['c', 300]), A('days', 'ПОСТОЯНСТВО', 'Забери 3 ежедневные награды', 3, st('days'), ['c', 200])
+	];
+	const rwT = a => (a.r[0] === 'c' ? '💰' : '💎') + a.r[1];
+
+	function claimAch(a) {
+		if(SV.ach[a.id] !== 1) return;
+		SV.ach[a.id] = 2;
+		SV[a.r[0] === 'c' ? 'coins' : 'gems'] += a.r[1];
+		SoundManager.play('success');
+		UI.toast('Получено: ' + rwT(a));
+		SaveManager.save()
+	}
+	const own = () => Object.keys(SV.owned).length,
+		has = r => CH.some(c => c.rarity === r && SV.owned[c.id]);
+
+	function checkAch() {
+		for(const a of ACH)
+			if(!SV.ach[a.id] && a.cur() >= a.g) {
+				SV.ach[a.id] = 1;
+				UI.pop.push(a);
+				SoundManager.play('success')
+			}
+	}
+
+	function give(c) {
+		const first = !SV.owned[c.id];
+		SV.owned[c.id] = 1;
+		checkAch();
+		return first
+	}
+	/* ===== UI HELPERS ===== */
+	const UI = {
+		rings: [],
+		pop: [],
+		cur: null,
+		curT: 0,
+		btns: [],
+		floats: [],
+		parts: [],
+		shake: 0,
+		msg: '',
+		msgT: 0,
+		toast(t) {
+			this.msg = t;
+			this.msgT = 2
+		}
+	};
+	const PMAX = (navigator.hardwareConcurrency || 4) <= 4 ? 25 : 60;
+
+	function rr(x, y, w, h, r) {
+		ctx.beginPath();
+		ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h)
+	}
+
+	function T(t, x, y, s, col, al) {
+		ctx.font = '900 ' + s + 'px system-ui,Arial';
+		ctx.textAlign = al || 'center';
+		ctx.textBaseline = 'middle';
+		ctx.lineWidth = s / 6;
+		ctx.strokeStyle = '#0008';
+		ctx.strokeText(t, x, y);
+		ctx.fillStyle = col || '#fff';
+		ctx.fillText(t, x, y)
+	}
+
+	function B(x, y, w, h, t, col, fn, fs) {
+		UI.btns.push({
+			x, y, w, h, fn
+		});
+		ctx.fillStyle = '#0006';
+		rr(x, y + 6, w, h, 22);
+		ctx.fill();
+		ctx.fillStyle = col || '#ff7a1a';
+		rr(x, y, w, h, 22);
+		ctx.fill();
+		ctx.strokeStyle = '#fff8';
+		ctx.lineWidth = 4;
+		ctx.stroke();
+		T(t, x + w / 2, y + h / 2, fs || Math.min(48, h * .5))
+	}
+
+	function bar(x, y, w, h, p, col) {
+		ctx.fillStyle = '#0008';
+		rr(x, y, w, h, h / 2);
+		ctx.fill();
+		if(p > 0) {
+			ctx.fillStyle = col || '#4cd964';
+			rr(x, y, Math.max(h, w * Math.min(1, p)), h, h / 2);
+			ctx.fill()
+		}
+	}
+
+	function float(t, x, y, col, s) {
+		UI.floats.push({
+			t, x, y, col, s: s || 44, l: 1
+		})
+	}
+
+	function burst(x, y, col, n) {
+		if(!SV.set.fx) return;
+		for(let i = 0; i < n && UI.parts.length < PMAX; i++) UI.parts.push({
+			x, y, vx: rnd(-300, 300), vy: rnd(-400, 100), l: .7, col
+		})
+	}
+
+	function drawChar(c, x, y, s, sq) {
+		const img = AM.get(c.id),
+			r = RAR[c.rarity];
+		ctx.save();
+		ctx.translate(x, y);
+		if(sq) ctx.scale(1 + sq, 1 - sq);
+		if(img) ctx.drawImage(img, -s / 2, -s / 2, s, s);
+		else {
+			ctx.fillStyle = 'hsl(' + (c.mergeLevel * 18) + ',70%,55%)';
+			rr(-s / 2, -s / 2, s, s, s * .28);
+			ctx.fill();
+			ctx.strokeStyle = r.col;
+			ctx.lineWidth = Math.max(4, s / 14);
+			ctx.stroke();
+			ctx.fillStyle = '#fff';
+			[-1, 1].forEach(k => {
+				ctx.beginPath();
+				ctx.arc(k * s * .2, -s * .12, s * .11, 0, 7);
+				ctx.fill()
+			});
+			ctx.fillStyle = '#000';
+			[-1, 1].forEach(k => {
+				ctx.beginPath();
+				ctx.arc(k * s * .2, -s * .12, s * .05, 0, 7);
+				ctx.fill()
+			});
+			ctx.fillRect(-s * .15, s * .1, s * .3, s * .06);
+			ctx.font = '800 ' + Math.max(11, s * .12) + 'px system-ui';
+			ctx.fillStyle = '#fff';
+			ctx.textAlign = 'center';
+			ctx.fillText(c.name, 0, s * .32, s * .9)
+		}
+		ctx.restore()
+	}
+
+	function bg(a, b) {
+		const g = ctx.createLinearGradient(0, 0, 0, H);
+		g.addColorStop(0, a || '#3a1c78');
+		g.addColorStop(1, b || '#14082c');
+		ctx.fillStyle = g;
+		ctx.fillRect(0, 0, W, H)
+	}
+
+	function topBar() {
+		ctx.fillStyle = '#0007';
+		rr(20, 16, 200, 56, 28);
+		ctx.fill();
+		rr(240, 16, 160, 56, 28);
+		ctx.fill();
+		T('💰 ' + SV.coins, 120, 45, 30, '#ffe14d');
+		T('💎 ' + SV.gems, 320, 45, 30, '#7fe9ff')
+	}
+	/* ===== GAME STATE ===== */
+	let scene = 'menu',
+		slots = [],
+		sel = -1,
+		combo = 0,
+		comboT = 0,
+		spawnT = 0,
+		merged = null,
+		mergeT = 0,
+		hint = '';
+	const G = {};
+	const go = s => {
+		scene = s;
+		SoundManager.play('click');
+		if(s === 'play') {
+			if(!slots.length)
+				for(let i = 0; i < 3; i++) spawn()
+		}
+	};
+
+	function spawn() {
+		if(slots.length >= 8) return;
+		const used = slots.map(s => s.p);
+		let p = 0;
+		while(used.includes(p)) p++;
+		const lvl = !SV.stats.merges ? ri(0, 1) : Math.random() < .12 ? 3 : Math.random() < .4 ? 1 : Math.random() < .5 ? 2 : 0;
+		slots.push({
+			p, c: CH[Math.min(lvl, 19)], sq: 0, bob: rnd(0, 6)
+		});
+	}
+	const SP = [
+		[150, 380],
+		[360, 380],
+		[570, 380],
+		[150, 600],
+		[360, 600],
+		[570, 600],
+		[150, 820],
+		[570, 820]
+	];
+
+	function tapSlot(i) {
+		const s = slots[i];
+		SV.stats.taps++;
+		comboT = 2 + .3 * lv('combo');
+		combo++;
+		SV.stats.maxCombo = Math.max(SV.stats.maxCombo, combo);
+		const m = combo >= 15 ? 4 : combo >= 8 ? 3 : combo >= 4 ? 2 : 1,
+			v = Math.round(s.c.value * m * (1 + .25 * lv('tap')));
+		SV.coins += v;
+		s.sq = .3;
+		float('+' + v, SP[s.p][0], SP[s.p][1] - 90, '#ffe14d');
+		burst(SP[s.p][0], SP[s.p][1], '#ffe14d', 6);
+		SoundManager.play('collect');
+		if(combo >= 4 && combo % 4 === 0) float(combo >= 15 ? '🔥 БЕЗУМИЕ!' : 'КОМБО x' + m, 360, 230, '#ff7a1a', 54);
+		UI.shake = Math.max(UI.shake, combo >= 15 ? 6 : 2);
+	}
+
+	function doMerge(a, b) {
+		const c = slots[a].c,
+			n = CH[c.mergeLevel + 1],
+			bp = slots[b].p,
+			pos = SP[bp];
+		slots = slots.filter((_, k) => k !== a && k !== b);
+		const st = {
+			p: bp,
+			c: n,
+			sq: .5,
+			bob: 0
+		};
+		slots.push(st);
+		sel = -1;
+		SV.stats.merges++;
+		const first = give(n);
+		SV.coins += n.value * 8;
+		merged = {
+			a: c,
+			n,
+			first
+		};
+		mergeT = 2.6;
+		burst(pos[0], pos[1], RAR[n.rarity].col, 26);
+		UI.shake = 7;
+		UI.rings.push({
+			x: pos[0],
+			y: pos[1],
+			r: 20,
+			l: .5,
+			col: RAR[n.rarity].col
+		}, {
+			x: pos[0],
+			y: pos[1],
+			r: 8,
+			l: .35,
+			col: '#fff'
+		});
+		float('СЛИЯНИЕ!', pos[0], pos[1] - 110, '#ffe14d', 38);
+		SoundManager.play('merge');
+		checkAch()
+	}
+	/* ===== RAID RUNNER ===== */
+	const R = {};
+	const LX = [160, 360, 560];
+
+	function startRaid() {
+		const un = CH.filter(c => !SV.owned[c.id]),
+			pool = un.length ? un.filter(c => c.mergeLevel >= 6 && c.mergeLevel <= 15) : CH,
+			P = pool.length ? pool : un.length ? un : CH;
+		if(!setup.run || !SV.owned[setup.run.id]) setup.run = CH.find(c => SV.owned[c.id]) || CH[0];
+		Object.assign(R, {
+			target: P[ri(0, P.length - 1)],
+			run: setup.run,
+			d: setup.d,
+			D: DIFF[setup.d],
+			M: MAPS[setup.map],
+			lane: 1,
+			jy: 0,
+			vy: 0,
+			obs: [],
+			t: 0,
+			dur: DIFF[setup.d].dur,
+			gap: 1,
+			spawn: 1,
+			over: false,
+			win: false,
+			inv: 0,
+			shield: lv('shield'),
+			gems: 0,
+			coins: 0,
+			claimed: 0,
+			slowT: 0,
+			slowF: 1,
+			leap: 0,
+			mag: 0,
+			cd: 3,
+			bonus: false,
+			bt: 0,
+			bsp: 0,
+			bk: 3
+		});
+		scene = 'raid';
+		SoundManager.play('click');
+		const a = AB[R.run.mergeLevel];
+		UI.toast(a[1] + ' ' + a[0] + ' — кнопка справа / E')
+	}
+
+	function lane(d) {
+		R.lane = Math.max(0, Math.min(2, R.lane + d))
+	}
+
+	function jump() {
+		if(R.jy === 0) {
+			R.vy = R.M.jv * (R.leap > 0 ? 1.25 : 1);
+			SoundManager.play('jump')
+		}
+	}
+
+	function raidUpdate(dt) {
+		if(R.over) return;
+		R.t += dt;
+		R.inv -= dt;
+		R.spawn -= dt;
+		R.slowT -= dt;
+		R.leap -= dt;
+		R.mag -= dt;
+		R.cd -= dt;
+		if(R.spawn <= 0 && R.t < R.dur - 2 && !R.bonus) {
+			R.spawn = rnd(R.D.a, R.D.b) * R.M.sm;
+			const q = Math.random(),
+				g = R.D.gem * R.M.gm,
+				type = q < g ? 2 : q < g + R.M.cc ? 3 : Math.random() < R.M.wall ? 1 : 0;
+			R.obs.push({
+				l: ri(0, 2),
+				y: -60,
+				type
+			})
+		}
+		const sp = (520 + R.t * R.M.acc) * R.D.sp * (R.slowT > 0 ? R.slowF : 1);
+		R.obs.forEach(o => o.y += sp * dt);
+		R.obs = R.obs.filter(o => o.y < 1350 && !o.dead);
+		R.vy -= R.M.g * dt;
+		R.jy = Math.max(0, R.jy + R.vy * dt);
+		if(R.jy === 0 && R.vy < 0) R.vy = 0;
+		for(const o of R.obs)
+			if(o.type > 1 && !o.dead && Math.abs(o.y - 1010) < 70 && Math.abs(o.l - R.lane) <= (R.mag > 0 ? 2 : lv('magnet'))) {
+				o.dead = 1;
+				if(o.type === 2) {
+					const g = 1 + (Math.random() < .25 * lv('vein') ? 1 : 0);
+					SV.gems += g;
+					R.gems += g;
+					SV.stats.gp += g;
+					float('+' + g + '💎', LX[o.l], 900, '#7fe9ff');
+					if(!R.bonus) burst(LX[o.l], 1000, '#7fe9ff', 8)
+				} else {
+					const v = R.bonus ? 30 : 15;
+					SV.coins += v;
+					R.coins += v;
+					if(!R.bonus || Math.random() < .25) float('+' + v, LX[o.l], 900, '#ffe14d')
+				}
+				SoundManager.play('collect')
+			}
+		for(const o of R.obs)
+			if(o.type < 2 && !o.dead && o.l === R.lane && Math.abs(o.y - 1010) < 55 && (o.type === 1 || (R.jy < 60 && R.leap <= 0)) && R.inv <= 0) {
+				o.dead = 1;
+				if(R.shield > 0) {
+					R.shield--;
+					float('🛡', LX[R.lane], 900, '#7fe9ff')
+				} else R.gap -= R.D.hit;
+				R.inv = .8;
+				UI.shake = 14;
+				SoundManager.play('fail');
+				float('АЙ!', LX[R.lane], 900, '#ff4d4d')
+			}
+		if(!R.bonus) R.gap = Math.min(1, R.gap + (.025 + .01 * lv('slow') - R.D.drain) * dt);
+		if(R.bonus) {
+			R.bt -= dt;
+			R.bsp -= dt;
+			if(R.bsp <= 0) {
+				R.bsp = R.bk === 2 ? .45 : .12;
+				R.obs.push({
+					l: ri(0, 2),
+					y: -60,
+					type: R.bk
+				})
+			}
+			if(R.bt <= 0) {
+				R.bonus = false;
+				finishWin()
+			}
+		} else if(R.gap <= 0) {
+			R.over = true;
+			R.win = false;
+			SV.stats.streak = 0;
+			SoundManager.play('fail')
+		} else if(R.t >= R.dur) {
+			if(Math.random() < .14 + .02 * R.d) {
+				SV.stats.ab++;
+				R.bonus = true;
+				R.bt = 10;
+				R.bsp = 0;
+				R.bk = Math.random() < .25 ? 2 : 3;
+				R.obs = R.obs.filter(o => o.type > 1);
+				SoundManager.play('success');
+				UI.shake = 10
+			} else finishWin()
+		}
+	}
+
+	function finishWin() {
+		R.over = true;
+		R.win = true;
+		R.reward = Math.round((300 + R.target.value * 20) * R.D.rw);
+		R.gemRw = R.d >= 2 ? R.d - 1 : 0;
+		SV.gems += R.gemRw;
+		SV.stats.raids++;
+		SV.stats.streak++;
+		SV.stats.bestStreak = Math.max(SV.stats.bestStreak, SV.stats.streak);
+		if(R.gap > .6 && R.d >= 1) SV.stats.fastRaid = 1;
+		if(R.d === 3) SV.stats.hell++;
+		R.first = give(R.target);
+		SV.best = Math.max(SV.best, R.reward);
+		Leaderboard.submitScore(SV.best);
+		SoundManager.play('success');
+		burst(360, 500, '#ffe14d', 30)
+	}
+
+	function raidDraw() {
+		bg(R.M.a, R.M.b);
+		ctx.fillStyle = '#ffffff14';
+		for(let i = 0; i < 3; i++) {
+			rr(LX[i] - 90, 0, 180, H, 0);
+			ctx.fill()
+		}
+		const bt = 1280 - (1 - R.gap) * 0 + 0;
+		T('ЦЕЛЬ: ' + R.target.name.toUpperCase(), 360, 60, 34, RAR[R.target.rarity].col);
+		bar(60, 100, 600, 30, R.t / R.dur, '#3d9bff');
+		T('БОСС', 60, 160, 24, '#ff7a7a', 'left');
+		if(R.shield > 0) T('🛡 x' + R.shield, 620, 200, 30, '#7fe9ff');
+		if(R.gems) T('💎 +' + R.gems, 20, 200, 30, '#7fe9ff', 'left');
+		if(R.coins) T('🪙 +' + R.coins, 20, 236, 26, '#ffe14d', 'left');
+		if(R.bonus) {
+			T('ADMIN ABUSE', 360, 270, 64, Math.floor(R.t * 8) % 2 ? '#ff3d3d' : '#ffe14d');
+			T(Math.max(0, R.bt).toFixed(1) + 'с  ' + (R.bk === 2 ? '💎' : '🪙'), 360, 340, 52)
+		}
+		bar(140, 146, 520, 26, R.gap, R.gap < .35 ? '#ff3d3d' : '#ff9d2e');
+		if(R.t > R.dur - 4) {
+			const py = (R.t - (R.dur - 4)) / 4 * 900 - 100;
+			ctx.fillStyle = '#00f0d0';
+			rr(200, py, 320, 40, 20);
+			ctx.fill();
+			T('ПОРТАЛ', 360, py + 20, 28, '#003')
+		}
+		R.obs.forEach(o => {
+			if(o.type > 1) {
+				T(o.type === 2 ? '💎' : '🪙', LX[o.l], o.y, 70);
+				return
+			}
+			ctx.fillStyle = o.type ? '#ff4d4d' : '#ffb300';
+			const h = o.type ? 90 : 36;
+			rr(LX[o.l] - 70, o.y - h / 2, 140, h, 12);
+			ctx.fill();
+			T(o.type ? 'СТЕНА' : 'ПРЫГАЙ', LX[o.l], o.y, 22, '#fff')
+		});
+		const by = 1250 - (1 - R.gap) * 0 - (R.gap < 1 ? (1 - R.gap) * 210 : 0);
+		ctx.fillStyle = '#7a1030';
+		rr(10, by, 700, 300, 60);
+		ctx.fill();
+		T('👹 ГИГАНТ-БРЕЙНРОТ', 360, by + 50, 34, '#fff');
+		if(R.inv <= 0 || Math.floor(R.t * 12) % 2) {
+			const px = LX[R.lane],
+				py = 1010 - R.jy;
+			ctx.fillStyle = '#0005';
+			ctx.beginPath();
+			ctx.ellipse(px, 1040, 45, 14, 0, 0, 7);
+			ctx.fill();
+			drawChar(R.run, px, py - 10, 110)
+		}
+		if(!R.over) {
+			const a = AB[R.run.mergeLevel];
+			B(515, 1150, 190, 110, R.cd > 0 ? Math.ceil(R.cd) + 'с' : a[1] + (TOUCH ? '' : ' E'), R.cd > 0 ? '#555' : '#ffb800', useAb, 44);
+			if(TOUCH) {
+				B(15, 1150, 135, 110, '◀', '#3d9bff', () => lane(-1));
+				B(160, 1150, 135, 110, '▶', '#3d9bff', () => lane(1));
+				B(305, 1150, 200, 110, 'ПРЫЖОК', '#ff7a1a', jump, 34)
+			}
+		}
+		if(R.over) {
+			ctx.fillStyle = '#000a';
+			ctx.fillRect(0, 0, W, H);
+			ctx.fillStyle = '#2a1650';
+			rr(60, 320, 600, 600, 40);
+			ctx.fill();
+			ctx.strokeStyle = '#fff';
+			ctx.stroke();
+			if(R.win) {
+				T('УСПЕХ!', 360, 400, 70, '#4cd964');
+				T('ТЫ УКРАЛ ЕГО!', 360, 470, 36);
+				drawChar(R.target, 360, 610, 170);
+				T(R.target.name, 360, 730, 36, RAR[R.target.rarity].col);
+				T('+' + R.reward + ' МОНЕТ', 360, 775, 44, '#ffe14d');
+				if(R.gemRw) T('+' + R.gemRw + ' 💎', 360, 815, 30, '#7fe9ff');
+				if(!R.claimed) {
+					B(90, 840, 260, 100, 'ЗАБРАТЬ', '#4cd964', () => {
+						SV.coins += R.reward;
+						R.claimed = 1;
+						scene = 'collection';
+						checkAch()
+					});
+					B(370, 840, 260, 100, 'x2 НАГРАДА', '#ff7a1a', () => Ads.showRewarded(() => {
+						SV.coins += R.reward * 2;
+						R.claimed = 1;
+						scene = 'collection'
+					}), 30)
+				}
+			} else {
+				T('💀 ТЕБЯ ПОЙМАЛИ!', 360, 420, 56, '#ff4d4d');
+				T('Босс догнал тебя', 360, 500, 32);
+				B(90, 600, 540, 110, 'ЕЩЁ РАЗ', '#4cd964', startRaid);
+				B(90, 740, 540, 110, 'ВТОРОЙ ШАНС (РЕКЛАМА)', '#ff7a1a', () => Ads.showRewarded(() => {
+					R.gap = .6;
+					R.over = false;
+					R.inv = 1.5;
+					R.obs = []
+				}), 30);
+				B(90, 870, 540, 50, 'МЕНЮ', '#555', () => go('menu'), 28)
+			}
+		}
+	}
+	/* ===== SCREENS ===== */
+	const DR = [
+		['+100 МОНЕТ', () => SV.coins += 100],
+		['+150 МОНЕТ', () => SV.coins += 150],
+		['+1 КРИСТАЛЛ', () => SV.gems += 1],
+		['+300 МОНЕТ', () => SV.coins += 300],
+		['+2 КРИСТАЛЛА', () => SV.gems += 2],
+		['СУНДУК +500', () => SV.coins += 500],
+		['РЕДКИЙ БРЕЙНРОТ', () => give(CH[6 + ri(0, 3)])]
+	];
+	const today = () => new Date().toISOString().slice(0, 10);
+
+	function menu() {
+		bg();
+		topBar();
+		T('BRAINROT', 360, 230, 110, '#ffe14d');
+		T('RUSH', 360, 330, 110, '#ff3d7f');
+		T('Укради. Слей. Убеги.', 360, 410, 34);
+		CH.slice(0, 3).forEach((c, i) => drawChar(c, 170 + i * 190, 520 + Math.sin(performance.now() / 300 + i) * 12, 120, Math.sin(performance.now() / 200 + i) * .05));
+		B(130, 640, 460, 130, '▶ ИГРАТЬ', '#4cd964', () => go('play'), 60);
+		B(130, 790, 460, 80, '🧠 КОЛЛЕКЦИЯ', '#3d9bff', () => go('collection'), 42);
+		B(130, 880, 460, 80, '🏆 ДОСТИЖЕНИЯ', '#b050ff', () => go('ach'), 42);
+		const nc = ACH.filter(a => SV.ach[a.id] === 1).length;
+		if(nc) {
+			ctx.fillStyle = '#ff2d2d';
+			ctx.beginPath();
+			ctx.arc(588, 882, 24, 0, 7);
+			ctx.fill();
+			T(nc, 588, 883, 26)
+		}
+		B(130, 970, 225, 80, '🥇 РЕКОРДЫ', '#ff7a1a', () => go('records'), 28);
+		B(365, 970, 225, 80, '🛒 ШОП', '#ff7a1a', () => go('shop'), 32);
+		B(130, 1060, 225, 80, '⚙ ОПЦИИ', '#666', () => go('settings'), 32);
+		const can = SV.daily.date !== today();
+		B(365, 1060, 225, 80, can ? '🎁 БОНУС!' : '🎁 завтра', can ? '#ff3d7f' : '#444', () => {
+			if(!can) return;
+			const d = SV.daily.day % 7;
+			DR[d][1]();
+			UI.toast('ДЕНЬ ' + (d + 1) + ': ' + DR[d][0]);
+			SV.daily = {
+				date: today(),
+				day: d + 1
+			};
+			SV.stats.days++;
+			checkAch()
+		}, 30)
+	}
+
+	function back() {
+		B(20, 1190, 180, 70, '◀ НАЗАД', '#555', () => go('menu'), 28)
+	}
+
+	function play(dt) {
+		bg();
+		topBar();
+		const hasRaid = SV.stats.merges >= 1;
+		if(comboT > 0) {
+			comboT -= dt;
+			if(comboT <= 0) combo = 0
+		}
+		if(combo > 1) T('КОМБО x' + combo, 560, 45, 34, '#ff9d2e');
+		spawnT -= dt;
+		G.acc = (G.acc || 0) + dt;
+		if(G.acc >= 1) {
+			G.acc -= 1;
+			SV.coins += lv('fab') * 2
+		}
+		if(lv('fab')) T('🏭 +' + lv('fab') * 2 + '/с', 600, 100, 24, '#ffe14d');
+		if(spawnT <= 0) {
+			spawnT = 2.2;
+			spawn()
+		}
+		hint = !SV.stats.taps ? 'ЖМИ НА БРЕЙНРОТА!' : !SV.stats.merges ? 'ПЕРЕТАЩИ ОДИНАКОВЫХ ДРУГ НА ДРУГА!' : hasRaid && !SV.stats.raids ? 'ТВОЙ ПЕРВЫЙ НАБЕГ ГОТОВ!' : '';
+		slots.forEach((s, i) => {
+			const p = SP[s.p];
+			s.sq *= .88;
+			UI.btns.push({
+				x: p[0] - 90,
+				y: p[1] - 90,
+				w: 180,
+				h: 180,
+				drag: s
+			});
+			if(G.drag && G.drag.moved && s !== G.drag.s && s.c === G.drag.s.c && Math.hypot(G.drag.x - p[0], G.drag.y - p[1]) < 100) {
+				ctx.fillStyle = '#4cd96499';
+				rr(p[0] - 100, p[1] - 100, 200, 200, 30);
+				ctx.fill()
+			}
+			if(!(G.drag && G.drag.s === s)) drawChar(s.c, p[0], p[1] + Math.sin(performance.now() / 350 + s.bob) * 6, 160, s.sq);
+			T(RAR[s.c.rarity].n, p[0], p[1] + 105, 20, RAR[s.c.rarity].col)
+		});
+		if(G.drag && G.drag.moved && slots.includes(G.drag.s)) drawChar(G.drag.s.c, G.drag.x, G.drag.y, 190, .06);
+		if(hint) T(hint, 360, 262, 26, '#fff');
+		if(hasRaid) B(130, 990, 460, 110, '🚨 УКРАСТЬ (НАБЕГ)', '#ff3d3d', () => go('setup'), 36);
+		if(merged && mergeT > 0) {
+			mergeT -= dt;
+			const e = Math.min(1, (2.6 - mergeT) * 5, mergeT * 4),
+				y = 190 - (1 - e) * 70;
+			ctx.globalAlpha = Math.max(0, e);
+			ctx.fillStyle = '#000c';
+			rr(100, y, 520, 72, 22);
+			ctx.fill();
+			ctx.strokeStyle = RAR[merged.n.rarity].col;
+			ctx.lineWidth = 4;
+			ctx.stroke();
+			drawChar(merged.a, 150, y + 36, 52);
+			T('→', 208, y + 36, 36);
+			drawChar(merged.n, 266, y + 36, 58);
+			T(merged.first ? 'НОВЫЙ БРЕЙНРОТ!' : 'СЛИЯНИЕ!', 470, y + 23, 22, '#ffe14d');
+			T(merged.n.name, 470, y + 51, 20, RAR[merged.n.rarity].col);
+			ctx.globalAlpha = 1
+		}
+		back()
+	}
+
+	function collection() {
+		bg();
+		topBar();
+		T('КОЛЛЕКЦИЯ БРЕЙНРОТОВ', 360, 120, 44);
+		const n = own();
+		T(n + ' / 20 СОБРАНО', 360, 175, 34, '#ffe14d');
+		bar(100, 205, 520, 30, n / 20);
+		CH.forEach((c, i) => {
+			const x = 40 + (i % 4) * 165,
+				y = 270 + Math.floor(i / 4) * 175,
+				o = SV.owned[c.id];
+			ctx.fillStyle = '#0008';
+			rr(x, y, 150, 160, 18);
+			ctx.fill();
+			if(o) {
+				drawChar(c, x + 75, y + 65, 100);
+				T(RAR[c.rarity].n, x + 75, y + 145, 18, RAR[c.rarity].col)
+			} else {
+				T('???', x + 75, y + 60, 40, '#777');
+				T('ЗАКРЫТО', x + 75, y + 120, 22, '#777')
+			}
+		});
+		back()
+	}
+
+	function records() {
+		bg();
+		topBar();
+		T('🏆 ТАБЛИЦА ЛИДЕРОВ', 360, 120, 48);
+		const sc = Leaderboard.getScores().concat([
+			['ТЫ', SV.best]
+		]).sort((a, b) => b[1] - a[1]);
+		sc.forEach((s, i) => T((i + 1) + '. ' + s[0] + '  ' + s[1], 360, 210 + i * 58, 36, s[0] === 'ТЫ' ? '#ffe14d' : '#fff'));
+		T('Лучшая награда за набег: ' + SV.best, 360, 640, 30, '#ffe14d');
+		back()
+	}
+	const UPG = [{
+		id: 'tap',
+		n: 'Сильный тап',
+		i: '👆',
+		d: '+25% монет за каждый тап',
+		cur: 'coins',
+		base: 80,
+		mul: 1.55,
+		max: 10
+	}, {
+		id: 'combo',
+		n: 'Долгое комбо',
+		i: '🔥',
+		d: '+0.3 сек до сброса комбо',
+		cur: 'coins',
+		base: 150,
+		mul: 1.7,
+		max: 5
+	}, {
+		id: 'fab',
+		n: 'Фабрика',
+		i: '🏭',
+		d: '+2 монеты в секунду',
+		cur: 'coins',
+		base: 400,
+		mul: 1.6,
+		max: 10
+	}, {
+		id: 'slow',
+		n: 'Тормоз босса',
+		i: '🐌',
+		d: 'Босс быстрее отстаёт',
+		cur: 'coins',
+		base: 300,
+		mul: 1.9,
+		max: 5
+	}, {
+		id: 'shield',
+		n: 'Щит',
+		i: '🛡',
+		d: '+1 защита от удара в набеге',
+		cur: 'gems',
+		base: 6,
+		mul: 2.4,
+		max: 3
+	}, {
+		id: 'magnet',
+		n: 'Магнит',
+		i: '🧲',
+		d: 'Алмазы с соседних дорожек',
+		cur: 'gems',
+		base: 10,
+		mul: 2.5,
+		max: 2
+	}, {
+		id: 'vein',
+		n: 'Алмазная жила',
+		i: '💎',
+		d: '+25% шанс двойного алмаза',
+		cur: 'gems',
+		base: 12,
+		mul: 2.2,
+		max: 3
+	}];
+	const lv = id => SV.up[id] || 0,
+		cost = u => Math.round(u.base * Math.pow(u.mul, lv(u.id)));
+
+	function buy(u) {
+		const l = lv(u.id);
+		if(l >= u.max) return;
+		const c = cost(u);
+		if(SV[u.cur] < c) {
+			UI.toast('Не хватает ' + (u.cur === 'gems' ? '💎' : '💰'));
+			SoundManager.play('fail');
+			return
+		}
+		SV[u.cur] -= c;
+		SV.up[u.id] = l + 1;
+		SV.stats.ups++;
+		SoundManager.play('merge');
+		UI.toast('Куплено: ' + u.n + ' ' + (l + 1) + '/' + u.max);
+		SaveManager.save()
+	}
+
+	function shop() {
+		bg();
+		topBar();
+		T('🛒 УЛУЧШЕНИЯ', 360, 108, 40);
+		UPG.forEach((u, k) => {
+			const y = 140 + k * 118,
+				l = lv(u.id),
+				mx = l >= u.max,
+				c = cost(u),
+				ok = !mx && SV[u.cur] >= c,
+				g = u.cur === 'gems';
+			ctx.fillStyle = '#0008';
+			rr(20, y, 680, 108, 20);
+			ctx.fill();
+			T(u.i, 70, y + 54, 52);
+			T(u.n + '  ' + l + '/' + u.max, 120, y + 34, 28, '#fff', 'left');
+			T(u.d, 120, y + 76, 22, '#ccc', 'left');
+			B(500, y + 14, 190, 80, mx ? 'МАКС' : (g ? '💎 ' : '💰 ') + c, mx ? '#444' : ok ? (g ? '#17a6c9' : '#4cd964') : '#7a5a5a', () => buy(u), 30)
+		});
+		B(130, 985, 460, 80, '📦 СУНДУК (РЕКЛАМА)', '#ff7a1a', () => Ads.showRewarded(() => {
+			if(Math.random() < .2) {
+				SV.gems += 1;
+				UI.toast('+1 💎')
+			} else {
+				const c = ri(200, 500);
+				SV.coins += c;
+				UI.toast('+' + c + ' 💰')
+			}
+		}), 30);
+		back()
+	}
+	const AB = [
+		['Таран', '🦏', 14, {
+			inv: 2,
+			clr: 500
+		}],
+		['Прыжок лягушки', '🐸', 12, {
+			leap: 4
+		}],
+		['Пицца-приманка', '🍕', 14, {
+			back: .22
+		}],
+		['Диско-шар', '🪩', 16, {
+			slow: .55,
+			t: 4
+		}],
+		['Сырный лёд', '🧀', 15, {
+			slow: .6,
+			t: 3,
+			inv: 1
+		}],
+		['Блинный удар', '🥞', 18, {
+			clr: 1300
+		}],
+		['Турбо', '⚡', 16, {
+			inv: 2.5,
+			back: .12
+		}],
+		['Укус', '🐊', 14, {
+			clr: 700,
+			coin: 3
+		}],
+		['Ракетный рывок', '🚀', 18, {
+			inv: 1.5,
+			back: .3
+		}],
+		['Колючки', '🌵', 17, {
+			inv: 3
+		}],
+		['Тень', '🥷', 10, {
+			inv: 1.2,
+			leap: 3
+		}],
+		['Лава', '🌋', 17, {
+			clr: 1300,
+			inv: .8
+		}],
+		['Лунный прыжок', '🌙', 14, {
+			leap: 6,
+			mag: 3
+		}],
+		['Смыв', '🚽', 16, {
+			clr: 1300,
+			back: .15
+		}],
+		['Алмазный магнит', '💎', 20, {
+			mag: 7
+		}],
+		['Золотой дождь', '👑', 15, {
+			coin: 12
+		}],
+		['Время вспять', '🍌', 20, {
+			slow: .35,
+			t: 5
+		}],
+		['Радужный таран', '🌈', 22, {
+			inv: 3,
+			clr: 1300,
+			back: .15
+		}],
+		['Пустота', '🕳', 20, {
+			clr: 1300,
+			inv: 2,
+			slow: .6,
+			t: 3
+		}],
+		['Глитч', '👾', 20, {
+			back: .35,
+			inv: 1.5,
+			clr: 900
+		}]
+	];
+	const DIFF = [{
+		n: 'ПРОГУЛКА',
+		col: '#4cd964',
+		sp: .85,
+		a: .8,
+		b: 1.3,
+		hit: .2,
+		drain: 0,
+		rw: 1,
+		gem: .05,
+		dur: 26
+	}, {
+		n: 'ПОГОНЯ',
+		col: '#ffb800',
+		sp: 1,
+		a: .55,
+		b: 1,
+		hit: .25,
+		drain: .01,
+		rw: 1.6,
+		gem: .06,
+		dur: 28
+	}, {
+		n: 'ХАОС',
+		col: '#ff7a1a',
+		sp: 1.2,
+		a: .4,
+		b: .8,
+		hit: .28,
+		drain: .02,
+		rw: 2.5,
+		gem: .07,
+		dur: 30
+	}, {
+		n: 'АДСКИЙ РАШ',
+		col: '#ff3d3d',
+		sp: 1.45,
+		a: .3,
+		b: .6,
+		hit: .32,
+		drain: .035,
+		rw: 4,
+		gem: .08,
+		dur: 32
+	}];
+	const MAPS = [{
+		n: '🌳 ПАРК',
+		a: '#2f7a3a',
+		b: '#0f2f18',
+		wall: .38,
+		cc: .06,
+		g: 2600,
+		jv: 950,
+		acc: 9,
+		sm: 1,
+		gm: 1
+	}, {
+		n: '🌋 ЛАВА',
+		a: '#8a2a14',
+		b: '#2a0a08',
+		wall: .6,
+		cc: .04,
+		g: 2600,
+		jv: 950,
+		acc: 12,
+		sm: .85,
+		gm: 1.3
+	}, {
+		n: '🌌 КОСМОС',
+		a: '#1b2a7a',
+		b: '#06061a',
+		wall: .3,
+		cc: .12,
+		g: 1800,
+		jv: 950,
+		acc: 9,
+		sm: 1,
+		gm: 1
+	}, {
+		n: '❄ ЛЁД',
+		a: '#2a7a9a',
+		b: '#0a2a3a',
+		wall: .45,
+		cc: .05,
+		g: 2600,
+		jv: 950,
+		acc: 20,
+		sm: 1,
+		gm: 1.3
+	}];
+	const setup = {
+			run: null,
+			d: 0,
+			map: 0
+		},
+		abl = id => SV.abl[id] || 0;
+
+	function abCost(c, l) {
+		const m = RAR[c.rarity].m;
+		return m <= 4 ? {
+			cur: 'coins',
+			v: Math.round(100 * (m + 1) * Math.pow(1.8, l))
+		} : {
+			cur: 'gems',
+			v: Math.round({
+				epic: 5,
+				legendary: 8,
+				mythic: 12,
+				secret: 18
+			}[c.rarity] * Math.pow(1.7, l))
+		}
+	}
+
+	function abDesc(a, l) {
+		const e = a[3],
+			k = 1 + .2 * l,
+			p = [];
+		if(e.inv) p.push('неуязв. ' + (e.inv * k).toFixed(1) + 'с');
+		if(e.back) p.push('босс назад ' + Math.round(e.back * k * 100) + '%');
+		if(e.clr) p.push(e.clr >= 1300 ? 'сносит все преграды' : 'сносит ближние');
+		if(e.slow) p.push('замедл. ' + Math.round(e.t * k) + 'с');
+		if(e.leap) p.push('авто-прыжок ' + Math.round(e.leap * k) + 'с');
+		if(e.mag) p.push('магнит ' + Math.round(e.mag * k) + 'с');
+		if(e.coin) p.push('+' + Math.round(e.coin * k) + ' монет');
+		return p.join(', ') + ' · откат ' + Math.round(a[2] * (1 - .05 * l)) + 'с'
+	}
+
+	function buyAb(c) {
+		const l = abl(c.id);
+		if(l >= 5) return;
+		const k = abCost(c, l);
+		if(SV[k.cur] < k.v) {
+			UI.toast('Не хватает ' + (k.cur === 'gems' ? '💎' : '💰'));
+			SoundManager.play('fail');
+			return
+		}
+		SV[k.cur] -= k.v;
+		SV.abl[c.id] = l + 1;
+		SV.stats.ups++;
+		SoundManager.play('merge');
+		SaveManager.save()
+	}
+
+	function useAb() {
+		if(R.over || R.cd > 0 || R.bonus) return;
+		const c = R.run,
+			a = AB[c.mergeLevel],
+			l = abl(c.id),
+			k = 1 + .2 * l,
+			e = a[3];
+		R.cd = a[2] * (1 - .05 * l);
+		SV.stats.abU++;
+		if(e.inv) R.inv = Math.max(R.inv, e.inv * k);
+		if(e.back) R.gap = Math.min(1, R.gap + e.back * k);
+		if(e.clr) {
+			const r = e.clr * k;
+			R.obs.forEach(o => {
+				if(o.type < 2 && o.y > 1010 - r) {
+					o.dead = 1;
+					burst(LX[o.l], Math.max(0, o.y), '#fff', 3)
+				}
+			})
+		}
+		if(e.slow) {
+			R.slowF = Math.max(.2, 1 - (1 - e.slow) * k);
+			R.slowT = e.t * k
+		}
+		if(e.leap) R.leap = e.leap * k;
+		if(e.mag) R.mag = e.mag * k;
+		if(e.coin)
+			for(let i = 0; i < Math.round(e.coin * k); i++) R.obs.push({
+				l: ri(0, 2),
+				y: -60 - i * 110,
+				type: 3
+			});
+		float(a[1] + ' ' + a[0], 360, 820, '#ffb800', 40);
+		UI.shake = 6;
+		SoundManager.play('success')
+	}
+
+	function setupScr() {
+		bg();
+		topBar();
+		T('ВЫБЕРИ БРЕЙНРОТА', 360, 100, 34);
+		if(!setup.run || !SV.owned[setup.run.id]) setup.run = CH.find(c => SV.owned[c.id]) || CH[0];
+		const c = setup.run;
+		CH.forEach((h, i) => {
+			const x = 20 + (i % 4) * 175,
+				y = 125 + Math.floor(i / 4) * 96,
+				o = SV.owned[h.id];
+			ctx.fillStyle = h === c ? '#ffffff44' : '#0008';
+			rr(x, y, 165, 88, 16);
+			ctx.fill();
+			if(o) {
+				UI.btns.push({
+					x, y, w: 165, h: 88, fn: () => setup.run = h
+				});
+				drawChar(h, x + 45, y + 44, 66);
+				T(AB[h.mergeLevel][1], x + 112, y + 30, 30);
+				T('Ур.' + abl(h.id), x + 112, y + 64, 22, RAR[h.rarity].col)
+			} else T('???', x + 82, y + 44, 32, '#777')
+		});
+		ctx.fillStyle = '#0009';
+		rr(20, 615, 680, 135, 20);
+		ctx.fill();
+		const a = AB[c.mergeLevel],
+			l = abl(c.id),
+			k = abCost(c, l);
+		T(c.name, 40, 642, 30, RAR[c.rarity].col, 'left');
+		T(a[1] + ' ' + a[0] + '  Ур.' + l + '/5', 40, 684, 26, '#ffb800', 'left');
+		T(abDesc(a, l), 360, 725, 19, '#ddd');
+		B(500, 628, 190, 70, l >= 5 ? 'МАКС' : (k.cur === 'gems' ? '💎 ' : '💰 ') + k.v, l >= 5 ? '#444' : SV[k.cur] >= k.v ? (k.cur === 'gems' ? '#17a6c9' : '#4cd964') : '#7a5a5a', () => buyAb(c), 28);
+		T('СЛОЖНОСТЬ', 360, 768, 24, '#fff');
+		DIFF.forEach((d, j) => B(20 + j * 175, 782, 165, 76, d.n, setup.d === j ? d.col : '#4a3a6a', () => setup.d = j, j === 3 ? 19 : 22));
+		T('КАРТА', 360, 880, 24, '#fff');
+		MAPS.forEach((m, j) => B(20 + j * 175, 895, 165, 68, m.n, setup.map === j ? '#3d9bff' : '#4a3a6a', () => setup.map = j, 22));
+		T('Награда x' + DIFF[setup.d].rw, 360, 985, 26, '#ffe14d');
+		B(130, 1010, 460, 100, '🚨 СТАРТ', '#ff3d3d', startRaid, 50);
+		back()
+	}
+
+	function settings() {
+		bg();
+		T('⚙ НАСТРОЙКИ', 360, 140, 56);
+		B(130, 300, 460, 100, '🔊 Звук  ' + (SV.set.sound ? 'ВКЛ' : 'ВЫКЛ'), '#3d9bff', () => SV.set.sound = !SV.set.sound, 38);
+		B(130, 430, 460, 100, '✨ Эффекты  ' + (SV.set.fx ? 'ВКЛ' : 'ВЫКЛ'), '#3d9bff', () => SV.set.fx = !SV.set.fx, 38);
+		B(130, 620, 460, 100, G.rs ? 'НАЖМИ ЕЩЁ РАЗ' : 'СБРОС ПРОГРЕССА', '#ff3d3d', () => {
+			if(G.rs) {
+				SaveManager.reset();
+				slots = [];
+				G.rs = 0;
+				go('menu')
+			} else G.rs = 1
+		}, 34);
+		back()
+	}
+	/* ===== LOOP & INPUT ===== */
+	let last = performance.now(),
+		px0 = null;
+
+	function slotAt(x, y, ex) {
+		return slots.find(s => s !== ex && Math.hypot(x - SP[s.p][0], y - SP[s.p][1]) < 100)
+	}
+
+	function endDrag(e) {
+		const d = G.drag;
+		G.drag = null;
+		if(scene !== 'play' || !slots.includes(d.s)) return;
+		if(!d.moved) {
+			tapSlot(slots.indexOf(d.s));
+			return
+		}
+		const [x, y] = pos(e), t = slotAt(x, y, d.s);
+		if(t && t.c === d.s.c && t.c.mergeLevel < 19) doMerge(slots.indexOf(d.s), slots.indexOf(t));
+		else if(t) {
+			float('Нужны одинаковые!', SP[t.p][0], SP[t.p][1] - 100, '#ff7a7a', 30);
+			SoundManager.play('fail')
+		}
+	}
+
+	function popup(dt) {
+		if(!UI.cur && UI.pop.length) {
+			UI.cur = UI.pop.shift();
+			UI.curT = 0;
+			burst(360, 130, '#ffe14d', 14)
+		}
+		if(!UI.cur) return;
+		const t = UI.curT += dt,
+			a = UI.cur;
+		if(t > 3.2) {
+			UI.cur = null;
+			return
+		}
+		const p = Math.min(1, t / .35),
+			q = t > 2.8 ? (t - 2.8) / .4 : 0,
+			y = 84 - (1 - p) * (1 - p) * 160 - q * 160,
+			g = ctx.createLinearGradient(60, y, 660, y);
+		g.addColorStop(0, '#ffb800');
+		g.addColorStop(1, '#ff7a1a');
+		ctx.fillStyle = '#0006';
+		rr(64, y + 6, 600, 92, 26);
+		ctx.fill();
+		ctx.fillStyle = g;
+		rr(60, y, 600, 92, 26);
+		ctx.fill();
+		ctx.strokeStyle = '#fff';
+		ctx.lineWidth = 4;
+		ctx.stroke();
+		T('🏆', 112, y + 46, 52);
+		T('ДОСТИЖЕНИЕ!', 390, y + 22, 20, '#fff');
+		T(a.n, 390, y + 50, 30, '#fff');
+		T('Награда: ' + rwT(a), 390, y + 77, 20, '#fff')
+	}
+	let achPage = 0;
+
+	function achScr() {
+		bg();
+		topBar();
+		T('🏆 ДОСТИЖЕНИЯ', 360, 108, 40);
+		T(ACH.filter(a => SV.ach[a.id]).length + '/' + ACH.length, 560, 45, 28, '#ffe14d');
+		ACH.slice(achPage * 8, achPage * 8 + 8).forEach((a, k) => {
+			const y = 130 + k * 114,
+				d = SV.ach[a.id],
+				c = Math.min(a.cur(), a.g);
+			ctx.fillStyle = '#0008';
+			rr(20, y, 680, 106, 20);
+			ctx.fill();
+			T(a.n, 40, y + 26, 26, d ? '#ffe14d' : '#fff', 'left');
+			T(a.d, 40, y + 56, 19, '#ccc', 'left');
+			bar(40, y + 76, 330, 18, c / a.g, d ? '#ffb800' : '#4cd964');
+			T(c + '/' + a.g, 385, y + 85, 18, '#fff', 'left');
+			if(d === 2) B(500, y + 17, 180, 72, '✓ ПОЛУЧЕНО', '#444', () => {}, 22);
+			else if(d === 1) B(500, y + 17, 180, 72, '🎁 ' + rwT(a), '#4cd964', () => claimAch(a), 28);
+			else B(500, y + 17, 180, 72, '🔒 ' + rwT(a), '#4a3a6a', () => {}, 26)
+		});
+		const pg = Math.ceil(ACH.length / 8);
+		B(130, 1055, 150, 70, '◀', '#3d9bff', () => achPage = Math.max(0, achPage - 1), 36);
+		T((achPage + 1) + ' / ' + pg, 360, 1090, 30);
+		B(440, 1055, 150, 70, '▶', '#3d9bff', () => achPage = Math.min(pg - 1, achPage + 1), 36);
+		back()
+	}
+
+	function frame(now) {
+		const dt = Math.min(.05, (now - last) / 1000);
+		last = now;
+		UI.btns = [];
+		ctx.save();
+		if(UI.shake > .3) {
+			ctx.translate(rnd(-UI.shake, UI.shake), rnd(-UI.shake, UI.shake));
+			UI.shake *= .85
+		}
+		if(scene === 'raid') {
+			raidUpdate(dt);
+			raidDraw()
+		} else({
+			menu, play: () => play(dt), collection, records, shop, settings, setup: setupScr, ach: achScr
+		})[scene]();
+		UI.floats.forEach(f => {
+			f.y -= 90 * dt;
+			f.l -= dt * 1.1;
+			ctx.globalAlpha = Math.max(0, f.l);
+			T(f.t, f.x, f.y, f.s, f.col)
+		});
+		ctx.globalAlpha = 1;
+		UI.floats = UI.floats.filter(f => f.l > 0);
+		UI.parts.forEach(p => {
+			p.x += p.vx * dt;
+			p.y += p.vy * dt;
+			p.vy += 900 * dt;
+			p.l -= dt;
+			ctx.globalAlpha = Math.max(0, p.l);
+			ctx.fillStyle = p.col;
+			ctx.fillRect(p.x, p.y, 10, 10)
+		});
+		ctx.globalAlpha = 1;
+		UI.parts = UI.parts.filter(p => p.l > 0);
+		UI.rings.forEach(r => {
+			r.r += 260 * dt;
+			r.l -= dt;
+			ctx.globalAlpha = Math.max(0, r.l * 2);
+			ctx.strokeStyle = r.col;
+			ctx.lineWidth = 8;
+			ctx.beginPath();
+			ctx.arc(r.x, r.y, r.r, 0, 7);
+			ctx.stroke()
+		});
+		ctx.globalAlpha = 1;
+		UI.rings = UI.rings.filter(r => r.l > 0);
+		if(UI.msgT > 0) {
+			UI.msgT -= dt;
+			ctx.fillStyle = '#000c';
+			rr(60, 1085, 600, 70, 30);
+			ctx.fill();
+			T(UI.msg, 360, 1120, 30, '#ffe14d')
+		}
+		ctx.restore();
+		popup(dt);
+		G.ct = (G.ct || 0) + dt;
+		if(G.ct > .5) {
+			G.ct = 0;
+			checkAch()
+		}
+		requestAnimationFrame(frame)
+	}
+
+	function pos(e) {
+		const r = cv.getBoundingClientRect();
+		return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]
+	}
+	cv.addEventListener('pointerdown', e => {
+		const [x, y] = pos(e);
+		px0 = [x, y];
+		for(let i = UI.btns.length - 1; i >= 0; i--) {
+			const b = UI.btns[i];
+			if(x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+				px0 = null;
+				if(b.drag) {
+					G.drag = {
+						s: b.drag,
+						x0: x,
+						y0: y,
+						x,
+						y,
+						moved: false
+					};
+					cv.setPointerCapture && cv.setPointerCapture(e.pointerId)
+				} else b.fn();
+				return
+			}
+		}
+	});
+	cv.addEventListener('pointermove', e => {
+		const d = G.drag;
+		if(!d) return;
+		const [x, y] = pos(e);
+		d.x = x;
+		d.y = y;
+		if(Math.hypot(x - d.x0, y - d.y0) > 18) d.moved = true
+	});
+	cv.addEventListener('pointercancel', () => {
+		G.drag = null
+	});
+	cv.addEventListener('pointerup', e => {
+		if(G.drag) {
+			endDrag(e);
+			return
+		}
+		if(!px0 || scene !== 'raid' || R.over) return;
+		const [x, y] = pos(e), dx = x - px0[0], dy = y - px0[1];
+		if(Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) lane(dx > 0 ? 1 : -1);
+		else if(dy < -40) jump();
+		px0 = null
+	});
+	addEventListener('keydown', e => {
+		if(scene !== 'raid' || R.over) return;
+		const k = e.key;
+		if(k === 'e' || k === 'E' || k === 'Shift') {
+			useAb();
+			return
+		}
+		if(k === 'a' || k === 'A' || k === 'ArrowLeft') lane(-1);
+		else if(k === 'd' || k === 'D' || k === 'ArrowRight') lane(1);
+		else if(k === ' ' || k === 'ArrowUp' || k === 'w') {
+			jump();
+			e.preventDefault()
+		}
+	});
+	document.addEventListener('visibilitychange', () => {
+		last = performance.now();
+		SaveManager.save()
+	});
+	requestAnimationFrame(frame);
+	</script>
+</body>
+
+</html>
