@@ -33,13 +33,23 @@
 		ctx = cv.getContext('2d'),
 		W = 720,
 		H = 1280;
+	let K = 1;
 
 	function fit() {
-		const s = Math.min(innerWidth / W, innerHeight / H);
+		const vw = window.visualViewport ? visualViewport.width : innerWidth,
+			vh = window.visualViewport ? visualViewport.height : innerHeight,
+			s = Math.min(vw / W, vh / H);
 		cv.style.width = W * s + 'px';
-		cv.style.height = H * s + 'px'
+		cv.style.height = H * s + 'px';
+		K = Math.min(2, Math.max(1, s * (window.devicePixelRatio || 1)));
+		if(cv.width !== Math.round(W * K)) {
+			cv.width = Math.round(W * K);
+			cv.height = Math.round(H * K)
+		}
 	}
 	addEventListener('resize', fit);
+	addEventListener('orientationchange', () => setTimeout(fit, 200));
+	window.visualViewport && visualViewport.addEventListener('resize', fit);
 	fit();
 	const TOUCH = ('ontouchstart' in window) || matchMedia('(pointer:coarse)').matches;
 	const rnd = (a, b) => a + Math.random() * (b - a),
@@ -315,9 +325,9 @@
 		A('mrg10', 'МАСТЕР СЛИЯНИЯ', 'Сделай 10 слияний', 10, st('merges'), ['c', 200]), A('mrg50', 'ФЬЮЖН-БОГ', 'Сделай 50 слияний', 50, st('merges'), ['g', 2]), A('cmb10', 'КОМБО!', 'Набери комбо x10', 10, st('maxCombo'), ['c', 150]),
 		A('col10', 'КОЛЛЕКЦИОНЕР', 'Открой 10 брейнротов', 10, () => own(), ['c', 400]), A('col20', 'БОГ БРЕЙНРОТОВ', 'Открой всех 20 брейнротов', 20, () => own(), ['g', 5]),
 		A('rare', 'РЕДКАЯ НАХОДКА', 'Получи Rare брейнрота', 1, () => cnt('rare'), ['c', 200]), A('epic', 'ЭПИК!', 'Получи Epic брейнрота', 1, () => cnt('epic'), ['g', 1]), A('leg', 'ЛЕГЕНДА!', 'Получи Legendary брейнрота', 1, () => cnt('legendary'), ['g', 3]),
-		A('myth', 'МИФ', 'Получи Mythic брейнрота', 1, () => cnt('mythic'), ['g', 4]), A('sec', 'СЕКРЕТ', 'Получи Secret брейнрота', 1, () => cnt('secret'), ['g', 6]), A('thief', 'ВОР', 'Успешно пройди набег', 1, st('raids'), ['c', 250]),
-		A('raid10', 'МАТЁРЫЙ ВОР', 'Пройди 10 набегов', 10, st('raids'), ['g', 2]), A('unst', 'НЕУДЕРЖИМЫЙ', 'Пройди 5 набегов подряд', 5, st('bestStreak'), ['g', 2]), A('speed', 'СПИДРАННЕР', 'Победи на ПОГОНЕ+ с большим запасом', 1, st('fastRaid'), ['g', 1]),
-		A('gem10', 'ОХОТНИК ЗА 💎', 'Собери 10 алмазов в набегах', 10, st('gp'), ['c', 300]), A('gem50', 'АЛМАЗНЫЙ КОРОЛЬ', 'Собери 50 алмазов в набегах', 50, st('gp'), ['g', 3]), A('abuse', 'ADMIN ABUSE!', 'Поймай ADMIN ABUSE', 1, st('ab'), ['g', 2]),
+		A('myth', 'МИФ', 'Получи Mythic брейнрота', 1, () => cnt('mythic'), ['g', 4]), A('sec', 'СЕКРЕТ', 'Получи Secret брейнрота', 1, () => cnt('secret'), ['g', 6]), A('thief', 'ВОР', 'Успешно пройди Rush', 1, st('raids'), ['c', 250]),
+		A('raid10', 'МАТЁРЫЙ ВОР', 'Пройди 10 Rush', 10, st('raids'), ['g', 2]), A('unst', 'НЕУДЕРЖИМЫЙ', 'Пройди 5 Rush подряд', 5, st('bestStreak'), ['g', 2]), A('speed', 'СПИДРАННЕР', 'Победи на ПОГОНЕ+ с большим запасом', 1, st('fastRaid'), ['g', 1]),
+		A('gem10', 'ОХОТНИК ЗА 💎', 'Собери 10 алмазов в Rush', 10, st('gp'), ['c', 300]), A('gem50', 'АЛМАЗНЫЙ КОРОЛЬ', 'Собери 50 алмазов в Rush', 50, st('gp'), ['g', 3]), A('abuse', 'ADMIN ABUSE!', 'Поймай ADMIN ABUSE', 1, st('ab'), ['g', 2]),
 		A('hell', 'АДСКИЙ ВОР', 'Победи на АДСКОМ РАШЕ', 1, st('hell'), ['g', 4]), A('skill', 'СУПЕРСИЛА', 'Используй способности 25 раз', 25, st('abU'), ['c', 150]), A('ups', 'КАЧОК', 'Купи 5 улучшений', 5, st('ups'), ['c', 300]), A('days', 'ПОСТОЯНСТВО', 'Забери 3 ежедневные награды', 3, st('days'), ['c', 200])
 	];
 	const rwT = a => (a.r[0] === 'c' ? '💰' : '💎') + a.r[1];
@@ -488,6 +498,10 @@
 	const G = {};
 	const go = s => {
 		scene = s;
+		if(typeof DBG !== 'undefined') {
+			DBG.s = 0;
+			DBG.e = 0
+		}
 		SoundManager.play('click');
 		if(s === 'play') {
 			if(!slots.length)
@@ -608,10 +622,16 @@
 	const LX = [160, 360, 560];
 
 	function startRaid() {
-		const nx = CH.find(c => c.mergeLevel >= 7 && !SV.stolen[c.id]);
+		const RG = [
+				[7, 9],
+				[10, 12],
+				[13, 15],
+				[16, 19]
+			][setup.map],
+			nx = CH.find(c => c.mergeLevel >= RG[0] && c.mergeLevel <= RG[1] && !SV.stolen[c.id]);
 		if(!setup.run || !SV.owned[setup.run.id]) setup.run = CH.find(c => SV.owned[c.id]) || CH[0];
 		Object.assign(R, {
-			target: nx || CH[ri(7, 19)],
+			target: nx || CH[ri(RG[0], RG[1])],
 			run: setup.run,
 			d: setup.d,
 			D: DIFF[setup.d],
@@ -685,24 +705,28 @@
 			add = (k, n) => {
 				for(let i = 0; i < n; i++) pk.push(k)
 			};
-		add('single', 4);
+		add('single', M.sp ? 2 : 4);
 		add('coins', M.cn);
 		if(d >= 1) {
 			add('gap', 2);
 			add('rocket', M.rk)
 		}
 		if(d >= 2) {
-			add('bar', 2);
-			add('zig', 2);
-			add('move', M.mv)
+			add('bar', M.lava ? 0 : 2);
+			add('zig', 2)
 		}
+		if(d >= 2 || M.sp) {
+			add('move', M.mv);
+			add('move2', M.mv2 || 0)
+		}
+		if(M.aval) add('aval', M.aval);
 		if(M.lava) add('lava', M.lava);
 		let k = pk[ri(0, pk.length - 1)];
 		const sp0 = (520 + R.t * M.acc) * D.sp * (R.half ? 1.12 : 1),
 			at = (y, vm) => (1010 - y) / (sp0 * (vm || 1)),
 			hz = R.obs.filter(h => !isPK(h.type) && !h.dead);
 		if(k === 'rocket') {
-			const ra = at(-420, 2.2);
+			const ra = at(-420, [2, 1.9, 1.6, 1.4][d]);
 			if(hz.some(h => Math.abs(at(h.y, h.vm) - ra) < .9)) k = 'coins'
 		} else if(k !== 'coins' && k !== 'pu') {
 			const na = at(-60);
@@ -718,21 +742,32 @@
 		else if(k === 'gap') {
 			[0, 1, 2].filter(l => l !== L).forEach(l => o(l, -60, 1))
 		} else if(k === 'rocket') o(L, -420, 5, {
-			vm: 2.2
+			vm: [2, 1.9, 1.6, 1.4][d]
 		});
 		else if(k === 'bar') o(1, -60, 6);
 		else if(k === 'zig') {
 			for(let i = 0; i < 3; i++) o((L + i) % 3, -60 - i * 280, 1);
 			R.spawn += .9
 		} else if(k === 'move') o(1, -60, 4);
+		else if(k === 'move2') {
+			o(1, -60, 4, {
+				ph: 0
+			});
+			o(1, -60, 4, {
+				ph: Math.PI
+			});
+			R.spawn += .4
+		} else if(k === 'aval') o(L, -300, 9, {
+			vm: 1.5
+		});
 		else if(k === 'lava') {
-			o(L, -160, 8, {
-				h: 160
+			o(L, -110, 8, {
+				h: 110
 			});
-			if(d >= 2) o((L + 1) % 3, -160, 8, {
-				h: 160
+			if(d >= 2) o((L + 1) % 3, -110, 8, {
+				h: 110
 			});
-			R.spawn += .5
+			R.spawn += .3
 		}
 	}
 
@@ -760,6 +795,7 @@
 
 	function raidUpdate(dt) {
 		if(R.over) return;
+		if(G.god) R.inv = Math.max(R.inv, 1);
 		R.t += dt;
 		R.inv -= dt;
 		R.spawn -= dt;
@@ -804,19 +840,26 @@
 			R.half = 1;
 			float('🔥 ПОЛОВИНА ПУТИ!', 360, 820, '#ffb800', 44)
 		}
-		if(R.d >= 1 && !R.bonus) {
+		if(R.d >= 1 && !R.bonus && !R.M.lava) {
 			if(R.lw > 0) {
 				R.lw -= dt;
 				if(R.lw <= 0) {
 					if(R.jy < 60 && R.inv <= 0) {
-						R.gap -= R.D.hit * .8;
-						UI.shake = 14;
-						SoundManager.play('fail');
-						float('💥 ТОЛЧОК!', 360, 900, '#ff4d4d')
+						if(R.shield > 0) {
+							R.shield--;
+							R.inv = .8;
+							UI.shake = 8;
+							float('🛡 БЛОК!', 360, 900, '#7fe9ff')
+						} else {
+							R.gap -= R.D.hit * .8;
+							UI.shake = 14;
+							SoundManager.play('fail');
+							float('💥 ТОЛЧОК!', 360, 900, '#ff4d4d')
+						}
 					} else float('✔ УВЕРНУЛСЯ!', 360, 900, '#4cd964')
 				}
 			} else if(R.t > R.lt && R.t < R.dur - 3) {
-				R.lw = 1.1;
+				R.lw = 1.4;
 				R.lt = R.t + rnd(8, 12)
 			}
 		}
@@ -1004,7 +1047,17 @@
 		}
 		if(R.gems) T('💎 +' + R.gems, 20, 200, 30, '#7fe9ff', 'left');
 		if(R.coins) T('🪙 +' + R.coins, 20, 236, 26, '#ffe14d', 'left');
-		if(R.lw > 0) T('⚠ ПРЫГАЙ!', 360, 470, 64, Math.floor(R.t * 10) % 2 ? '#ff3d3d' : '#fff');
+		if(R.lw > 0) {
+			const f = R.lw / 1.4,
+				gc = f < .3 ? '#4cd964' : '#ff3d3d';
+			ctx.strokeStyle = gc;
+			ctx.lineWidth = 8;
+			ctx.beginPath();
+			ctx.arc(R.px, 1000, 60 + 130 * f, 0, 7);
+			ctx.stroke();
+			T(f < .3 ? 'ПРЫГАЙ СЕЙЧАС!' : '⚠ ПРЫГАЙ!', 360, 470, 56, gc);
+			T(R.lw.toFixed(1), 360, 545, 76, '#fff')
+		}
 		if(R.bonus) {
 			T('ADMIN ABUSE', 360, 270, 64, Math.floor(R.t * 8) % 2 ? '#ff3d3d' : '#ffe14d');
 			T(Math.max(0, R.bt).toFixed(1) + 'с  ' + (R.bk === 2 ? '💎' : '🪙'), 360, 340, 52)
@@ -1031,8 +1084,26 @@
 				return
 			}
 			if(t === 5) {
-				if(o.y < 80) T('❗', x, 190, 60);
-				T('🚀', x, o.y, 70);
+				ctx.fillStyle = 'rgba(255,60,60,' + (.1 + .1 * Math.sin(R.t * 25)) + ')';
+				ctx.fillRect(x - 60, 0, 120, H);
+				if(o.y < 120) T('❗', x, 190, 90);
+				ctx.fillStyle = '#ff6a00aa';
+				rr(x - 14, o.y - 130, 28, 130, 12);
+				ctx.fill();
+				T('🚀', x, o.y, 100);
+				return
+			}
+			if(t === 9) {
+				ctx.fillStyle = 'rgba(120,200,255,' + (.1 + .1 * Math.sin(R.t * 25)) + ')';
+				ctx.fillRect(x - 60, 0, 120, H);
+				if(o.y < 120) T('❄ ЛАВИНА!', x, 190, 30, '#cfefff');
+				ctx.fillStyle = '#e8f6ff';
+				rr(x - 70, o.y - 45, 140, 90, 24);
+				ctx.fill();
+				ctx.strokeStyle = '#7fd6ff';
+				ctx.lineWidth = 5;
+				ctx.stroke();
+				T('🏔', x, o.y, 64);
 				return
 			}
 			if(t === 6) {
@@ -1044,7 +1115,7 @@
 			}
 			if(t === 8) {
 				ctx.fillStyle = '#ff5a14';
-				rr(x - 80, o.y - 80, 160, 160, 16);
+				rr(x - 80, o.y - o.h / 2, 160, o.h, 16);
 				ctx.fill();
 				T('ЛАВА · ПРЫГАЙ', x, o.y, 19);
 				return
@@ -1265,10 +1336,10 @@
 		}
 		if(lv('fab')) T('🏭 +' + Math.round(fabR()) + '/с', 600, 100, 24, '#ffe14d');
 		if(spawnT <= 0) {
-			spawnT = SPN[lv('spawn')];
+			spawnT = G.fast ? .4 : SPN[lv('spawn')];
 			spawn()
 		}
-		hint = !SV.stats.taps ? 'ЖМИ НА БРЕЙНРОТА!' : !SV.stats.merges ? 'ПЕРЕТАЩИ ОДИНАКОВЫХ ДРУГ НА ДРУГА!' : hasRaid && !SV.stats.raids ? 'ОТКРЫТЫ РЕЖИМЫ! ПОПРОБУЙ НАБЕГ!' : '';
+		hint = !SV.stats.taps ? 'ЖМИ НА БРЕЙНРОТА!' : !SV.stats.merges ? 'ПЕРЕТАЩИ ОДИНАКОВЫХ ДРУГ НА ДРУГА!' : hasRaid && !SV.stats.raids ? 'ОТКРЫТЫ РЕЖИМЫ! ПОПРОБУЙ RUSH!' : '';
 		SP.forEach((p, i) => {
 			ctx.fillStyle = i < maxS() ? '#ffffff14' : '#00000040';
 			rr(p[0] - 80, p[1] - 80, 160, 160, 26);
@@ -1386,7 +1457,7 @@
 			['ТЫ', SV.best]
 		]).sort((a, b) => b[1] - a[1]);
 		sc.forEach((s, i) => T((i + 1) + '. ' + s[0] + '  ' + s[1], 360, 210 + i * 58, 36, s[0] === 'ТЫ' ? '#ffe14d' : '#fff'));
-		T('Лучшая награда за набег: ' + SV.best, 360, 640, 30, '#ffe14d');
+		T('Лучшая награда за Rush: ' + SV.best, 360, 640, 30, '#ffe14d');
 		back()
 	}
 	const SPN = [2.2, 2, 1.8, 1.6, 1.4, 1.2, 1],
@@ -1451,14 +1522,14 @@
 		id: 'slow',
 		n: 'Тормоз босса',
 		i: '🐌',
-		d: 'Босс быстрее отстаёт в набеге',
+		d: 'Босс быстрее отстаёт в Rush',
 		cur: 'coins',
 		costs: [400, 900, 2000, 4500, 10000]
 	}, {
 		id: 'shield',
 		n: 'Щит',
 		i: '🛡',
-		d: '+1 защита от удара в набеге',
+		d: '+1 защита от удара в Rush',
 		cur: 'gems',
 		costs: [8, 20, 45]
 	}, {
@@ -1523,7 +1594,7 @@
 			T(u.i, 70, y + 54, 52);
 			T(u.n + '  ' + l + '/' + n, 120, y + 32, 28, '#fff', 'left');
 			T(mx ? 'Максимум' : (typeof u.d === 'function' ? u.d(l) : u.d), 120, y + 76, 20, '#ccc', 'left');
-			B(500, y + 14, 190, 80, mx ? 'МАКС' : lock ? '🔒 НАБЕГ' : (g ? '💎 ' : '💰 ') + c, mx ? '#444' : lock ? '#555' : ok ? (g ? '#17a6c9' : '#4cd964') : '#7a5a5a', () => buy(u), lock ? 24 : 30)
+			B(500, y + 14, 190, 80, mx ? 'МАКС' : lock ? '🔒 RUSH' : (g ? '💎 ' : '💰 ') + c, mx ? '#444' : lock ? '#555' : ok ? (g ? '#17a6c9' : '#4cd964') : '#7a5a5a', () => buy(u), lock ? 24 : 30)
 		});
 		const pg = Math.ceil(UPG.length / 6);
 		B(130, 862, 150, 70, '◀', '#3d9bff', () => shopPage = Math.max(0, shopPage - 1), 36);
@@ -1542,81 +1613,81 @@
 		back()
 	}
 	const AB = [
-		['Таран', '🦏', 14, {
+		['Таран', '🦏', 18, {
 			inv: 2,
 			clr: 500
 		}],
-		['Прыжок лягушки', '🐸', 12, {
+		['Прыжок лягушки', '🐸', 11, {
 			leap: 4
 		}],
-		['Пицца-приманка', '🍕', 14, {
+		['Пицца-приманка', '🍕', 20, {
 			back: .22
 		}],
-		['Диско-шар', '🪩', 16, {
+		['Диско-шар', '🪩', 15, {
 			slow: .55,
 			t: 4
 		}],
-		['Сырный лёд', '🧀', 15, {
+		['Сырный лёд', '🧀', 16, {
 			slow: .6,
 			t: 3,
 			inv: 1
 		}],
-		['Блинный удар', '🥞', 18, {
+		['Блинный удар', '🥞', 22, {
 			clr: 1300
 		}],
-		['Турбо', '⚡', 16, {
+		['Турбо', '⚡', 18, {
 			inv: 2.5,
 			back: .12
 		}],
-		['Укус', '🐊', 14, {
+		['Укус', '🐊', 13, {
 			clr: 700,
 			coin: 3
 		}],
-		['Ракетный рывок', '🚀', 18, {
+		['Ракетный рывок', '🚀', 24, {
 			inv: 1.5,
 			back: .3
 		}],
-		['Колючки', '🌵', 17, {
+		['Колючки', '🌵', 20, {
 			inv: 3
 		}],
-		['Тень', '🥷', 10, {
+		['Тень', '🥷', 9, {
 			inv: 1.2,
 			leap: 3
 		}],
-		['Лава', '🌋', 17, {
+		['Лава', '🌋', 22, {
 			clr: 1300,
 			inv: .8
 		}],
-		['Лунный прыжок', '🌙', 14, {
+		['Лунный прыжок', '🌙', 15, {
 			leap: 6,
 			mag: 3
 		}],
-		['Смыв', '🚽', 16, {
+		['Смыв', '🚽', 24, {
 			clr: 1300,
 			back: .15
 		}],
-		['Алмазный магнит', '💎', 20, {
+		['Алмазный магнит', '💎', 16, {
 			mag: 7
 		}],
-		['Золотой дождь', '👑', 15, {
+		['Золотой дождь', '👑', 14, {
 			coin: 12
 		}],
-		['Время вспять', '🍌', 20, {
+		['Время вспять', '🍌', 24, {
 			slow: .35,
 			t: 5
 		}],
-		['Радужный таран', '🌈', 22, {
+		['Радужный таран', '🌈', 30, {
 			inv: 3,
 			clr: 1300,
 			back: .15
 		}],
-		['Пустота', '🕳', 20, {
+		['Пустота', '🕳', 28, {
 			clr: 1300,
 			inv: 2,
 			slow: .6,
 			t: 3
 		}],
-		['Глитч', '👾', 20, {
+		['Глитч', '👾', 32, {
 			back: .35,
 			inv: 1.5,
 			clr: 900
@@ -1690,11 +1761,11 @@
 		pu: 1,
 		rk: 2,
 		mv: 0,
-		lava: 3,
-		t: 'лавовые лужи, прыгай далеко',
+		lava: 7,
+		t: 'лавовые озёра, прыгай через них',
 		a: '#8a2a14',
 		b: '#2a0a08',
-		wall: .6,
+		wall: 1,
 		cc: .04,
 		g: 2600,
 		jv: 950,
@@ -1706,12 +1777,14 @@
 		cn: 3,
 		pu: 2,
 		rk: 1,
-		mv: 3,
+		mv: 6,
+		mv2: 3,
+		sp: 1,
 		lava: 0,
 		t: 'движущиеся стены, мало гравитации',
 		a: '#1b2a7a',
 		b: '#06061a',
-		wall: .3,
+		wall: .12,
 		cc: .12,
 		g: 1800,
 		jv: 950,
@@ -1726,6 +1799,7 @@
 		mv: 1,
 		lava: 0,
 		ice: 1,
+		aval: 3,
 		t: 'скольжение и ракеты',
 		a: '#2a7a9a',
 		b: '#0a2a3a',
@@ -1977,7 +2051,7 @@
 		const nd = needR(),
 			h = stN(),
 			ok = h >= nd;
-		T('Условие: укради ' + nd + ' брейнротов в набегах (' + h + '/' + nd + ')', 360, 198, 22, ok ? '#4cd964' : '#fff');
+		T('Условие: укради ' + nd + ' брейнротов в Rush (' + h + '/' + nd + ')', 360, 198, 22, ok ? '#4cd964' : '#fff');
 		bar(60, 216, 600, 20, h / nd, '#d98cff');
 		T('Сброс: монеты, 💎, брейнроты, улучшения, карты. Останутся: достижения, перки, рекорды', 360, 258, 16, '#ccc');
 		PR.forEach((u, k) => {
@@ -1995,7 +2069,7 @@
 		});
 		B(60, 820, 600, 100, ok ? (G.rb ? 'ТОЧНО? НАЖМИ ЕЩЁ РАЗ' : '♻ ПЕРЕРОДИТЬСЯ (+' + gainR() + ' 🧠)') : '🔒 НУЖНО ' + nd + ' КРАЖ', '#ff3d7f', () => {
 			if(!ok) {
-				UI.toast('Укради больше брейнротов в набегах');
+				UI.toast('Укради больше брейнротов в Rush');
 				return
 			}
 			if(G.rb) rebirth();
@@ -2091,18 +2165,30 @@
 			}, 19)
 		});
 		[
-			['🏃 НАБЕГ', 'Укради брейнрота — откроется новый уровень слияния', 'Награда: 💰 монеты · 💎 алмазы · 🔓 слияние', startRaid],
-			['🐦 FLAPPY BRAINROT', 'Лети между труб и собирай 🪙', 'Награда: 💰 много монет · ⚡ буст дохода ×2 · рекорд ' + SV.stats.fb, startFlappy],
-			['🚀 BRAINROT JUMP', 'Прыгай по платформам всё выше', 'Награда: 💎 за высоту · 🎁 брейнроты на арену · рекорд ' + SV.stats.jb + ' м', startJump]
+			['🏃 RUSH', 'Укради брейнрота (редкость зависит от карты)', 'Награда: 💰 · 💎 · 🔓 слияние · открывает уровни', [
+				['ИГРАТЬ', startRaid]
+			]],
+			['🐦 FLAPPY BRAINROT', 'Обычный: цель ' + (10 + 5 * setup.d + 2 * setup.map) + ' труб · ∞: до поражения', 'Награда: 💰 монеты · ⚡ буст ×2 · рекорд ' + SV.stats.fb, [
+				['ОБЫЧНЫЙ', () => startFlappy(0)],
+				['∞ БЕСКОНЕЧН.', () => startFlappy(1)]
+			]],
+			['🚀 BRAINROT JUMP', 'Обычный: цель ' + (500 + 300 * setup.d + 150 * setup.map) + ' м · ∞: до падения', 'Награда: 💎 за высоту · 🎁 брейнроты · рекорд ' + SV.stats.jb + ' м', [
+				['ОБЫЧНЫЙ', () => startJump(0)],
+				['∞ БЕСКОНЕЧН.', () => startJump(1)]
+			]]
 		].forEach((m, k) => {
 			const y = 480 + k * 165;
 			ctx.fillStyle = '#0008';
 			rr(20, y, 680, 150, 22);
 			ctx.fill();
-			T(m[0], 40, y + 32, 30, '#ffe14d', 'left');
-			T(m[1], 40, y + 74, 19, '#ddd', 'left');
-			T(m[2], 40, y + 112, 19, '#7fe9ff', 'left');
-			B(540, y + 30, 150, 90, 'ИГРАТЬ', '#4cd964', m[3], 28)
+			T(m[0], 40, y + 30, 28, '#ffe14d', 'left');
+			T(m[1], 40, y + 68, 17, '#ddd', 'left');
+			T(m[2], 40, y + 104, 18, '#7fe9ff', 'left');
+			const bs = m[3];
+			bs.forEach((b, i) => {
+				const h = bs.length > 1 ? 60 : 90;
+				B(500, bs.length > 1 ? y + 12 + i * 70 : y + 30, 190, h, b[0], i ? '#3d9bff' : '#4cd964', b[1], bs.length > 1 ? 20 : 28)
+			})
 		});
 		back()
 	}
@@ -2121,26 +2207,16 @@
 		if(Math.random() < .28) F.it.push({
 			p, off: (Math.random() < .5 ? -1 : 1) * (g / 2 - 42), k: Math.random() < .5 ? 's' : 'm'
 		});
-		if(Math.random() < [0, .3, .45, .6][d]) {
-			const pd = {
-				x: x + 200,
-				base: rnd(450, 850),
-				amp: rnd(170, 280),
-				ph: rnd(0, 6),
-				sp: rnd(1.8, 2.6),
-				cy: 640
-			};
-			F.pd.push(pd);
-			if(Math.random() < .5) F.it.push({
-				pd, off: (Math.random() < .5 ? -1 : 1) * 100, k: Math.random() < .5 ? 's' : 'm'
-			})
-		}
 	}
 
-	function startFlappy() {
+	function startFlappy(inf) {
 		const d = setup.d,
 			m = setup.map;
+		G.xc = 0;
 		Object.assign(F, {
+			inf: !!inf,
+			goal: 10 + 5 * d + 2 * m,
+			win: false,
 			c: modeRun(),
 			d,
 			m,
@@ -2154,8 +2230,8 @@
 			shield: 0,
 			mag: 0,
 			inv: 0,
-			sp: [210, 240, 270, 305][d] * (m === 3 ? 1.2 : 1),
-			gap: [280, 250, 225, 205][d],
+			sp: [210, 240, 270, 305][d] * (m === 3 ? 1.2 : m === 1 ? 1.12 : 1),
+			gap: [280, 250, 225, 205][d] * (m === 1 ? .9 : 1),
 			g: m === 2 ? 1100 : 1500,
 			score: 0,
 			coins: 0,
@@ -2186,18 +2262,25 @@
 		return 1
 	}
 
-	function flEnd() {
+	function flEnd(w) {
 		F.over = true;
+		F.win = !!w;
+		if(w && F.m * 4 + F.d === SV.rp && SV.rp < 15) {
+			SV.rp++;
+			UI.toast('🔓 Открыт новый уровень!')
+		}
 		SoundManager.play('fail');
 		UI.shake = 12;
 		SV.stats.fb = Math.max(SV.stats.fb, F.score);
 		F.rw = {
 			coins: Math.round((F.score * 20 * (1 + .6 * F.d) + F.coins * 25) * mult()),
 			boost: Math.round(Math.floor(F.score / 5) * 30 * (1 + .25 * F.d))
-		}
+		};
+		if(w) F.rw.coins = Math.round(F.rw.coins * 1.3)
 	}
 
 	function flScr(dt) {
+		if(G.xc) dt = 0;
 		const M = MAPS[F.m];
 		bg(M.a, M.b);
 		let end = 0;
@@ -2228,6 +2311,7 @@
 				if(!p.passed && p.x + 120 < F.x) {
 					p.passed = 1;
 					F.score++;
+					if(!F.inf && F.score >= F.goal) end = 2;
 					SoundManager.play('collect');
 					float('+1', F.x + 40, F.y - 70, '#ffe14d', 36)
 				}
@@ -2313,7 +2397,7 @@
 				F.vy = F.y < 100 ? 200 : -420
 			}
 		}
-		if(end) flEnd();
+		if(end) flEnd(end === 2);
 		ctx.fillStyle = '#7a4f24';
 		ctx.fillRect(0, 1200, W, 80);
 		ctx.save();
@@ -2343,9 +2427,13 @@
 		if(F.shield > 0) T('🛡 ×' + F.shield, 700, 120, 26, '#7fe9ff', 'right');
 		if(F.mag > 0) T('🧲 ' + Math.max(0, F.mag).toFixed(1) + 'с', 700, 156, 26, '#d98cff', 'right');
 		if(!F.started) T('ТАПНИ, ЧТОБЫ ЛЕТЕТЬ!', 360, 420, 36);
-		if(!F.over) B(20, 84, 150, 54, '✖ ВЫХОД', '#555', () => go('modes'), 22);
-		else mres({
-			t: '🐦 ПОЛЁТ ОКОНЧЕН',
+		if(!F.over) {
+			B(20, 84, 150, 54, '✖ ВЫХОД', '#555', () => {
+				G.xc = 1
+			}, 22);
+			if(G.xc) exitDlg()
+		} else mres({
+			t: F.win ? '🏆 ЦЕЛЬ ДОСТИГНУТА!' : '🐦 ПОЛЁТ ОКОНЧЕН',
 			s: F,
 			l: ['Трубы: ' + F.score + ' (рекорд ' + SV.stats.fb + ')', '🪙 Собрано: ' + F.coins, '💰 +' + F.rw.coins, '⚡ Буст ×2: +' + fmt(F.rw.boost)],
 			cl: k => {
@@ -2353,21 +2441,21 @@
 				SV.boostT = Math.min(3600, SV.boostT + F.rw.boost * k);
 				SaveManager.save()
 			},
-			again: startFlappy
+			again: () => startFlappy(F.inf)
 		})
 	}
 	// ---- BRAINROT JUMP
 	function newPl(y) {
 		const d = J.d,
 			r = Math.random(),
-			mv = J.m === 3 ? .35 : d >= 1 ? .2 : 0,
-			br = d >= 2 ? .15 : 0,
+			mv = J.m === 2 ? .55 : d >= 1 ? .2 : 0,
+			br = J.m === 3 ? .35 : d >= 2 ? .15 : 0,
 			sp = .08,
-			spk = (J.lastK !== 4 && J.h > 100) ? [.06, .1, .14, .18][d] : 0,
+			spk = (J.lastK !== 4 && J.h > 100) ? [.06, .1, .14, .18][d] * (J.m === 1 ? 1.6 : 1) : 0,
 			k = r < mv ? 1 : r < mv + br ? 2 : r < mv + br + sp ? 3 : r < mv + br + sp + spk ? 4 : 0;
 		J.lastK = k;
 		const x = rnd(80, 640);
-		if(J.h > 150 && Math.random() < [.08, .12, .16, .2][d]) J.mo.push({
+		if(J.h > 150 && Math.random() < [.08, .12, .16, .2][d] * (J.m === 1 ? 2 : 1)) J.mo.push({
 			x: rnd(100, 620),
 			bx: rnd(100, 620),
 			y: y - rnd(60, 110),
@@ -2378,10 +2466,14 @@
 		}
 	}
 
-	function startJump() {
+	function startJump(inf) {
 		const d = setup.d,
 			m = setup.map;
+		G.xc = 0;
 		Object.assign(J, {
+			inf: !!inf,
+			goal: 500 + 300 * d + 150 * m,
+			win: false,
 			c: modeRun(),
 			d,
 			m,
@@ -2420,12 +2512,18 @@
 			y -= rnd(90, 140);
 			J.pl.push(newPl(y))
 		}
+		J.hy = y;
 		scene = 'jumpm'
 	}
 
-	function jpEnd() {
+	function jpEnd(w) {
 		if(J.over) return;
 		J.over = true;
+		J.win = w === 1;
+		if(w === 1 && J.m * 4 + J.d === SV.rp && SV.rp < 15) {
+			SV.rp++;
+			UI.toast('🔓 Открыт новый уровень!')
+		}
 		SoundManager.play('fail');
 		UI.shake = 12;
 		SV.stats.jb = Math.max(SV.stats.jb, Math.floor(J.h));
@@ -2438,17 +2536,19 @@
 	}
 
 	function jpScr(dt) {
+		if(G.xc) dt = 0;
 		const M = MAPS[J.m];
 		bg(M.a, M.b);
 		if(!J.over) {
 			J.t += dt;
 			J.py = J.y;
 			const dir = (J.kr - J.kl);
-			if(dir) J.tx = Math.max(-30, Math.min(750, J.tx + dir * 900 * dt));
-			const dx = J.tx - J.x;
+			if(dir) J.tx = (J.tx + dir * 900 * dt + 720) % 720;
+			let dx = J.tx - J.x;
+			if(dx > 360) dx -= 720;
+			if(dx < -360) dx += 720;
 			J.x += Math.sign(dx) * Math.min(Math.abs(dx), 950 * dt);
-			if(J.x < -30) J.x += 780;
-			if(J.x > 750) J.x -= 780;
+			J.x = (J.x + 720) % 720;
 			if(J.jet > 0) {
 				J.jet -= dt;
 				J.vy = -1500
@@ -2459,8 +2559,8 @@
 			});
 			if(J.vy > 0)
 				for(const p of J.pl)
-					if(!p.dead && J.py + 30 <= p.y + 14 && J.y + 30 >= p.y && Math.abs(J.x - p.x) < p.w / 2 + 22) {
-						if(p.k === 4) {
+					if(!p.dead && J.py + 30 <= p.y + 14 && J.y + 30 >= p.y && cdx(J.x, p.x) < p.w / 2 + 22) {
+						if(p.k === 4 && cdx(J.x, p.x) < 38) {
 							jpEnd();
 							break
 						}
@@ -2472,7 +2572,7 @@
 					}
 			J.mo.forEach(m => {
 				m.x = Math.max(70, Math.min(650, m.bx + Math.sin(J.t * 1.5 + m.ph) * 130));
-				if(!m.dead && !J.over && Math.hypot(m.x - J.x, m.y - J.y) < 56) {
+				if(!m.dead && !J.over && Math.hypot(cdx(m.x, J.x), m.y - J.y) < 56) {
 					if(J.jet > 0 || (J.vy > 0 && J.py + 30 <= m.y - 8)) {
 						m.dead = 1;
 						if(J.jet <= 0) J.vy = -Math.sqrt(2 * J.g * 280);
@@ -2484,7 +2584,7 @@
 			});
 			J.mo = J.mo.filter(m => !m.dead && m.y < J.cam + H + 100);
 			J.pl.forEach(p => {
-				if(p.it && !p.got && Math.abs(p.x - J.x) < 60 && Math.abs(p.y - 34 - J.y) < 64) {
+				if(p.it && !p.got && cdx(p.x, J.x) < 60 && Math.abs(p.y - 34 - J.y) < 64) {
 					p.got = 1;
 					if(p.it === 'c') {
 						J.coins++;
@@ -2500,12 +2600,14 @@
 				J.top = J.y;
 				J.h = (940 - J.top) / 10
 			}
+			if(!J.inf && J.h >= J.goal) jpEnd(1);
 			if(J.y - 440 < J.cam) J.cam = J.y - 440;
-			let hy = Math.min(...J.pl.map(p => p.y));
+			let hy = J.hy;
 			while(hy > J.cam - 300) {
 				hy -= rnd(90, Math.min(215, 140 + J.d * 12 + J.h / 90));
 				J.pl.push(newPl(hy))
 			}
+			J.hy = hy;
 			J.pl = J.pl.filter(p => p.y < J.cam + H + 100 && !(p.dead && p.y > J.cam + H));
 			if(J.m === 1) {
 				J.lava -= (40 + J.d * 16) * (1 + J.h / 3500) * dt;
@@ -2516,31 +2618,47 @@
 		J.pl.forEach(p => {
 			if(p.dead) return;
 			const sy = p.y - J.cam;
-			ctx.fillStyle = ['#4cd964', '#3d9bff', '#b5793a', '#ffb800', '#ff4d4d'][p.k];
+			ctx.fillStyle = ['#4cd964', '#3d9bff', '#b5793a', '#ffb800', '#6fbf73'][p.k];
 			rr(p.x - p.w / 2, sy, p.w, 24, 10);
 			ctx.fill();
 			ctx.strokeStyle = '#0006';
 			ctx.lineWidth = 3;
 			ctx.stroke();
 			if(p.k === 3) T('🌀', p.x, sy - 8, 36);
-			if(p.k === 4) T('▲▲▲▲', p.x, sy - 6, 22, '#fff');
-			if(p.it && !p.got) T(p.it === 'c' ? '🪙' : '🚀', p.x, sy - 34, 44)
+			if(p.k === 4) {
+				ctx.fillStyle = '#e33';
+				ctx.beginPath();
+				for(let i = 0; i < 3; i++) {
+					const bx = p.x - 30 + i * 30;
+					ctx.moveTo(bx - 14, sy);
+					ctx.lineTo(bx, sy - 26);
+					ctx.lineTo(bx + 14, sy)
+				}
+				ctx.fill()
+			}
+			if(p.it && !p.got) ES(p.it === 'c' ? '🪙' : '🚀', p.x, sy - 34, 44)
 		});
-		J.mo.forEach(m => T('👾', m.x, m.y - J.cam, 56));
+		J.mo.forEach(m => ES('👾', m.x, m.y - J.cam, 56));
 		if(J.m === 1) {
 			ctx.fillStyle = '#ff5a14';
 			ctx.fillRect(0, J.lava - J.cam, W, H)
 		}
 		const sy = J.y - J.cam;
 		drawChar(J.c, J.x, sy, 72);
+		if(J.x < 60) drawChar(J.c, J.x + 720, sy, 72);
+		if(J.x > 660) drawChar(J.c, J.x - 720, sy, 72);
 		if(J.jet > 0) T('🔥', J.x, sy + 44, 40);
 		T(Math.floor(J.h) + ' м', 360, 150, 60, '#fff');
 		T('🪙 ' + J.coins, 700, 120, 26, '#ffe14d', 'right');
-		if(!J.over) B(20, 84, 150, 54, '✖ ВЫХОД', '#555', () => go('modes'), 22);
-		else {
+		if(!J.over) {
+			B(20, 84, 150, 54, '✖ ВЫХОД', '#555', () => {
+				G.xc = 1
+			}, 22);
+			if(G.xc) exitDlg()
+		} else {
 			const r = J.rw;
 			mres({
-				t: '🚀 ПАДЕНИЕ!',
+				t: J.win ? '🏆 ЦЕЛЬ ДОСТИГНУТА!' : '🚀 ПАДЕНИЕ!',
 				s: J,
 				l: ['Высота: ' + Math.floor(J.h) + ' м (рекорд ' + SV.stats.jb + ')', '💰 +' + r.coins, '💎 +' + r.gems + ' (за каждые 600 м)', '🎁 Брейнроты на арену: ' + r.br + ' (за 900 м)'],
 				cl: k => {
@@ -2549,16 +2667,119 @@
 					giveBR(r.br * k);
 					SaveManager.save()
 				},
-				again: startJump
+				again: () => startJump(J.inf)
 			})
 		}
+	}
+	const cdx = (a, b) => {
+			const d = Math.abs(a - b) % 720;
+			return Math.min(d, 720 - d)
+		},
+		_es = {};
+
+	function ES(ch, x, y, s) {
+		let c = _es[ch + s];
+		if(!c) {
+			c = document.createElement('canvas');
+			c.width = c.height = Math.ceil(s * 1.4);
+			const g = c.getContext('2d');
+			g.font = s + 'px system-ui,Apple Color Emoji,Segoe UI Emoji';
+			g.textAlign = 'center';
+			g.textBaseline = 'middle';
+			g.fillText(ch, c.width / 2, c.height / 2);
+			_es[ch + s] = c
+		}
+		ctx.drawImage(c, x - c.width / 2, y - c.height / 2)
+	}
+
+	function exitDlg() {
+		ctx.fillStyle = '#000b';
+		ctx.fillRect(0, 0, W, H);
+		ctx.fillStyle = '#2a1650';
+		rr(80, 430, 560, 380, 36);
+		ctx.fill();
+		ctx.strokeStyle = '#fff';
+		ctx.lineWidth = 4;
+		ctx.stroke();
+		T('⚠ ВЫЙТИ?', 360, 500, 48, '#ffb800');
+		T('Награда за этот заход', 360, 570, 28);
+		T('будет аннулирована!', 360, 610, 28, '#ff7a7a');
+		B(110, 660, 230, 90, 'ОСТАТЬСЯ', '#4cd964', () => {
+			G.xc = 0
+		}, 30);
+		B(380, 660, 230, 90, 'ВЫЙТИ', '#ff3d3d', () => {
+			G.xc = 0;
+			go('modes')
+		}, 30)
+	}
+	const DBG = {
+		s: 0,
+		e: 0,
+		w: 0
+	};
+
+	function dbgTap(k) {
+		if(k === 's') {
+			DBG.s++;
+			DBG.e = 0;
+			DBG.w = 0
+		} else if(DBG.s === 6) {
+			DBG.e++;
+			if(!DBG.w) {
+				DBG.w = 1;
+				setTimeout(() => {
+					if(DBG.s === 6 && DBG.e === 4 && scene === 'settings') go('dbg');
+					DBG.s = 0;
+					DBG.e = 0;
+					DBG.w = 0
+				}, 1000)
+			}
+		} else {
+			DBG.s = 0;
+			DBG.e = 0
+		}
+	}
+
+	function dbgScr() {
+		bg();
+		topBar();
+		T('🛠 ДЕБАГ', 360, 108, 44);
+		const A = [
+			['+10 000 💰', () => SV.coins += 1e4],
+			['+1 000 000 💰', () => SV.coins += 1e6],
+			['+100 💎', () => SV.gems += 100],
+			['+10 🧠 (перерожд.)', () => {
+				SV.pr.pts += 10
+			}],
+			['Открыть все уровни', () => SV.rp = 15],
+			['Украсть всех + открыть', () => CH.forEach(c => {
+				SV.owned[c.id] = 1;
+				if(c.mergeLevel >= 7) SV.stolen[c.id] = 1
+			})],
+			['Макс. слоты (12)', () => SV.up.slots = 6],
+			['Буст ×2 на 1 час', () => SV.boostT = 3600],
+			['Бессмертие в Rush: ' + (G.god ? 'ВКЛ' : 'ВЫКЛ'), () => G.god = !G.god],
+			['Быстрый спавн: ' + (G.fast ? 'ВКЛ' : 'ВЫКЛ'), () => G.fast = !G.fast]
+		];
+		A.forEach((a, i) => B(20 + (i % 2) * 350, 150 + Math.floor(i / 2) * 100, 330, 86, a[0], '#3d9bff', () => {
+			a[1]();
+			UI.toast('✔ ' + a[0]);
+			SaveManager.save()
+		}, a[0].length > 18 ? 20 : 24));
+		back()
 	}
 
 	function settings() {
 		bg();
 		T('⚙ НАСТРОЙКИ', 360, 140, 56);
-		B(130, 300, 460, 100, '🔊 Звук  ' + (SV.set.sound ? 'ВКЛ' : 'ВЫКЛ'), '#3d9bff', () => SV.set.sound = !SV.set.sound, 38);
-		B(130, 430, 460, 100, '✨ Эффекты  ' + (SV.set.fx ? 'ВКЛ' : 'ВЫКЛ'), '#3d9bff', () => SV.set.fx = !SV.set.fx, 38);
+		B(130, 300, 460, 100, '🔊 Звук  ' + (SV.set.sound ? 'ВКЛ' : 'ВЫКЛ'), '#3d9bff', () => {
+			SV.set.sound = !SV.set.sound;
+			dbgTap('s')
+		}, 38);
+		B(130, 430, 460, 100, '✨ Эффекты  ' + (SV.set.fx ? 'ВКЛ' : 'ВЫКЛ'), '#3d9bff', () => {
+			SV.set.fx = !SV.set.fx;
+			dbgTap('e')
+		}, 38);
 		B(130, 620, 460, 100, G.rs ? 'НАЖМИ ЕЩЁ РАЗ' : 'СБРОС ПРОГРЕССА', '#ff3d3d', () => {
 			if(G.rs) {
 				slots = [];
@@ -2594,6 +2815,14 @@
 			burst(x, y, '#ffe14d', 10);
 			SoundManager.play('collect');
 			return
+		}
+		if(!t) {
+			const fi = SP.findIndex((q, i) => i < maxS() && !slots.some(z => z.p === i) && Math.hypot(x - q[0], y - q[1]) < 100);
+			if(fi >= 0) {
+				d.s.p = fi;
+				SoundManager.play('click');
+				return
+			}
 		}
 		if(t && t.c === d.s.c && t.c.mergeLevel < 19) {
 			const nn = CH[t.c.mergeLevel + 1];
@@ -2675,6 +2904,7 @@
 		if(SV.boostT > 0) SV.boostT = Math.max(0, SV.boostT - dt);
 		last = now;
 		UI.btns = [];
+		ctx.setTransform(K, 0, 0, K, 0, 0);
 		ctx.save();
 		if(UI.shake > .3) {
 			ctx.translate(rnd(-UI.shake, UI.shake), rnd(-UI.shake, UI.shake));
@@ -2685,7 +2915,7 @@
 			for(let i = 0; i < n; i++) raidUpdate(dt / n);
 			raidDraw()
 		} else({
-			menu, play: () => play(dt), collection, records, shop, settings, bros: brosScr, reb: rebScr, ach: achScr, modes: modesScr, flappy: () => flScr(dt), jumpm: () => jpScr(dt)
+			menu, play: () => play(dt), collection, records, shop, settings, dbg: dbgScr, bros: brosScr, reb: rebScr, ach: achScr, modes: modesScr, flappy: () => flScr(dt), jumpm: () => jpScr(dt)
 		})[scene]();
 		UI.floats.forEach(f => {
 			f.y -= 90 * dt;
@@ -2738,8 +2968,9 @@
 	function modePointer(x, y) {
 		if(scene !== 'flappy' && scene !== 'jumpm') return;
 		if(UI.btns.some(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h)) return;
-		if(scene === 'flappy') flap();
-		else J.tx = x
+		if(scene === 'flappy') {
+			if(!G.xc) flap()
+		} else J.tx = x
 	}
 
 	function pos(e) {
